@@ -39,6 +39,8 @@ def import_tasks():
     from omniisaacgymenvs.tasks.factory.factory_task_nut_bolt_pick import FactoryTaskNutBoltPick
     from omniisaacgymenvs.tasks.factory.factory_task_nut_bolt_place import FactoryTaskNutBoltPlace
     from omniisaacgymenvs.tasks.factory.factory_task_nut_bolt_screw import FactoryTaskNutBoltScrew
+    from omniisaacgymenvs.tasks.factory.factory_task_cube import FactoryCubeTask
+
     from omniisaacgymenvs.tasks.franka_cabinet import FrankaCabinetTask
     from omniisaacgymenvs.tasks.franka_deformable import FrankaDeformableTask
     from omniisaacgymenvs.tasks.humanoid import HumanoidLocomotionTask
@@ -62,6 +64,7 @@ def import_tasks():
         "FactoryTaskNutBoltPick": FactoryTaskNutBoltPick,
         "FactoryTaskNutBoltPlace": FactoryTaskNutBoltPlace,
         "FactoryTaskNutBoltScrew": FactoryTaskNutBoltScrew,
+        "FactoryCube": FactoryCubeTask,
         "FrankaCabinet": FrankaCabinetTask,
         "FrankaDeformable": FrankaDeformableTask,
         "Humanoid": HumanoidLocomotionTask,
