@@ -92,7 +92,7 @@ env:
   controlFrequencyInv: 2 # 60 hz
   numEnvs: ${resolve_default:128,${...num_envs}}
   numObservations: 21   # ... (1) remaining time
-  numActions: 13        # 12 for position (3), rotation (4),  forces (?) and gripper pose
+  numActions: 14        # 12 for position (3), rotation (4),  forces (?) and gripper pose
 
   close_and_lift: False  # close gripper and lift after last step of episode
   num_gripper_move_sim_steps: 40 #20  # number of timesteps to reserve for moving gripper before first step of episode
@@ -111,11 +111,13 @@ randomize:
   bolt_pos_xy_noise: [0.1, 0.1]  # noise on bolt position
 
 rl:
-  pos_action_scale: [0.1, 0.1, 0.1]
-  rot_action_scale: [0.1, 0.1, 0.1]
+  # pos_action_scale: [0.1, 0.1, 0.1]
+  # rot_action_scale: [0.1, 0.1, 0.1]
+  pos_action_scale: [0.0, 0.0, 0.0]
+  rot_action_scale: [0.0, 0.0, 0.0]
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
-  gripper_action_scale: [1.0]
+  gripper_action_scale: [1.0, 1.0]
   deltaq_action_scale: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 
   clamp_rot: True
@@ -124,8 +126,9 @@ rl:
   num_keypoints: 4  # number of keypoints used in reward
   keypoint_scale: 0.5  # length of line of keypoints
 
-  keypoint_reward_scale: 1.0  # scale on keypoint-based reward
-  action_penalty_scale: 0.0  # scale on action penalty
+  keypoint_reward_scale: 0.0  # scale on keypoint-based reward
+  action_penalty_scale: 0.001  # scale on action penalty
+  finger_penalty_scale: 0.0
 
   max_episode_length: 100 # 200
 
