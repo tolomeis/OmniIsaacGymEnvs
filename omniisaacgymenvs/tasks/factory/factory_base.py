@@ -45,9 +45,12 @@ from omni.isaac.core.utils.prims import get_prim_at_path
 from omni.isaac.core.utils.stage import get_current_stage
 from omniisaacgymenvs.tasks.base.rl_task import RLTask
 from omniisaacgymenvs.robots.articulations.factory_franka import FactoryFranka
+
+
 from pxr import PhysxSchema, UsdPhysics
 import omniisaacgymenvs.tasks.factory.factory_control as fc
 from omniisaacgymenvs.tasks.factory.factory_schema_class_base import FactoryABCBase
+
 from omniisaacgymenvs.tasks.factory.factory_schema_config_base import (
     FactorySchemaConfigBase,
 )
@@ -158,7 +161,7 @@ class FactoryBase(RLTask, FactoryABCBase):
                 size=1.0,
                 color=np.array([0, 0, 0]),
             )
-
+        
         self.parse_controller_spec(add_to_stage=add_to_stage)
 
     def acquire_base_tensors(self):
@@ -569,3 +572,5 @@ class FactoryBase(RLTask, FactoryABCBase):
         self._env._world._physics_sim_view.set_gravity(
             carb.Float3(gravity[0], gravity[1], gravity[2])
         )
+
+    

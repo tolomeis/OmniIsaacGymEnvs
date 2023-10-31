@@ -182,7 +182,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     
     async def reset_idx_async(self, env_ids, randomize_gripper_pose=True) -> None:
         """Reset specified environments."""
-
+        print("USING ASYNC")
         self._reset_object(env_ids)
         self._reset_franka(env_ids)
 
@@ -214,19 +214,46 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
+
+
         # Now compute dof pos to grasp the cube
         gripper_initial_grasp_pos = self.cube_grasp_pos[env_ids,:].clone().to(device=self.device)
-        #gripper_initial_grasp_pos[:,2] += 0.01
+        #gripper_initial_grasp_pos[:,2] -= 0.005
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
 
-        dpose = self._get_franka_dof(gripper_initial_grasp_pos, gripper_initial_grasp_quat, self.asset_info_franka_table.franka_gripper_width_max)
+        #self.set_gripper_to(gripper_initial_grasp_pos, gripper_initial_grasp_quat)
+        #dof = self._get_franka_dof(gripper_initial_grasp_pos, gripper_initial_grasp_quat,self.asset_info_franka_table.franka_gripper_width_max)
 
-        self.dof_pos[env_ids] = dpose
-        self.ctrl_target_dof_pos[env_ids] = self.dof_pos[env_ids]
+        #print(self.dof_pos[0, 0:7])
+        # delta_dof = fc.compute_dof_pos_target(
+        #     cfg_ctrl = self.cfg_ctrl,
+        #     arm_dof_pos =                           self.dof_pos[:, 0:7],
+        #     fingertip_midpoint_pos =                self.fingertip_midpoint_pos,
+        #     fingertip_midpoint_quat =               self.fingertip_midpoint_quat,
+        #     jacobian =                              self.fingertip_midpoint_jacobian,
+        #     ctrl_target_fingertip_midpoint_pos =    gripper_initial_grasp_pos,
+        #     ctrl_target_fingertip_midpoint_quat =   gripper_initial_grasp_quat,
+        #     ctrl_target_gripper_dof_pos =           self.asset_info_franka_table.franka_gripper_width_max,
+        #     device = self.device,
+        # )
 
-        self.frankas.set_joint_positions(self.dof_pos[env_ids], indices=indices)
-        self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
-    
+        # self.dof_pos[:, 0:7] += delta_dof
+
+        # print('df computed by func')
+        # print(dof[0, 0:7])
+
+        # self.dof_pos[env_ids] = dof[env_ids]
+        # self.dof_vel[env_ids] = 0.0  # shape = (num_envs, num_dofs)
+        # self.frankas.set_joint_positions(positions=self.dof_pos[env_ids], indices=indices)
+        # self.frankas.set_joint_position_targets(positions=self.dof_pos[env_ids], indices=indices)
+        # self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
+
+        # step once to update physx with the newly set joint velocities
+        self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
+        self.refresh_base_tensors()
+        self.refresh_env_tensors()
+        self._refresh_task_tensors()
+
 
     def _reset_object(self, env_ids):
         """Reset root states of cube."""
@@ -456,7 +483,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         #                   - action_penalty * self.cfg_task.rl.action_penalty_scale \
         #                   - finger_penalty * self.cfg_task.rl.finger_penalty_scale \
         #                   + (self.cube_pos[:, 2] -  self.cfg_base.env.table_height)
-
+        
         self.rew_buf[:] =  (self.cube_pos[:, 2] -  self.cfg_base.env.table_height) \
                             - action_penalty * self.cfg_task.rl.action_penalty_scale 
 
@@ -739,12 +766,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self._env._world.physics_sim_view.flush()
         await omni.kit.app.get_app().next_update_async()
 
-    def _get_franka_dof(self, target_gripper_pose, target_quat, gripper_w):
+    def _get_franka_dof(self, current_dof_pos, target_gripper_pose, target_quat, gripper_w):
         """Set Franka DOF position target to move fingertips towards target pose."""
 
         target_dof_pos = fc.compute_dof_pos_target(
             cfg_ctrl = self.cfg_ctrl,
-            arm_dof_pos = self.arm_dof_pos,
+            arm_dof_pos = current_dof_pos,
             fingertip_midpoint_pos = self.fingertip_midpoint_pos,
             fingertip_midpoint_quat = self.fingertip_midpoint_quat,
             jacobian = self.fingertip_midpoint_jacobian,
@@ -755,30 +782,42 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         )
         return target_dof_pos
 
-        def set_gripper_to(self, gripper_pose, quat, width, sim_steps=1):
-                    # Step sim and render
+    def set_gripper_to(self, target_gripper_pose, target_quat, sim_steps=100):
+        """Perform CLIK to move the gripper to specific pose"""
+        ctrl_target_dof_pos = torch.zeros_like(self.dof_pos, device=self.device)
+
         for _ in range(sim_steps):
+            # Refresh data
             self.refresh_base_tensors()
             self.refresh_env_tensors()
             self._refresh_task_tensors()
 
+            # compute pose error
             pos_error, axis_angle_error = fc.get_pose_error(
                 fingertip_midpoint_pos=self.fingertip_midpoint_pos,
                 fingertip_midpoint_quat=self.fingertip_midpoint_quat,
-                ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
-                ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,
+                ctrl_target_fingertip_midpoint_pos = target_gripper_pose,
+                ctrl_target_fingertip_midpoint_quat = target_quat,
                 jacobian_type=self.cfg_ctrl['jacobian_type'],
                 rot_error_type='axis_angle'
             )
-
             delta_hand_pose = torch.cat((pos_error, axis_angle_error), dim=-1)
-            actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
-            actions[:, :6] = delta_hand_pose
 
-            self._apply_actions_as_ctrl_targets(
-                actions=actions,
-                ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
-                do_scale=False,
+            # Use dfferential IK to compute delta dof
+            delta_arm_dof_pos = fc._get_delta_dof_pos(
+                delta_pose=delta_hand_pose,
+                ik_method='pinv',
+                jacobian=self.fingertip_midpoint_jacobian,
+                device=self.device,
             )
+            # Compute new DOFs
+            ctrl_target_dof_pos[:, 0:7] = self.dof_pos[:,0:7] + delta_arm_dof_pos
+            ctrl_target_dof_pos[:, 7:9] = self.asset_info_franka_table.franka_gripper_width_max  # gripper finger joints
+            # set to robots and render
+            self.frankas.set_joint_positions(positions=ctrl_target_dof_pos)
+            self.frankas.set_joint_position_targets(positions=ctrl_target_dof_pos)
+            self.frankas.set_joint_velocities(torch.zeros_like(self.dof_pos, device=self.device))
 
             SimulationContext.step(self._env._world, render=True)
+            
+
