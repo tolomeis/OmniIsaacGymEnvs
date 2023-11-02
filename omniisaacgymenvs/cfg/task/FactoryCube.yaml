@@ -131,6 +131,7 @@ rl:
   keypoint_reward_scale: 0.0  # scale on keypoint-based reward
   action_penalty_scale: 0.001  # scale on action penalty
   finger_penalty_scale: 0.0
+  dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
 
   max_episode_length: 100 # 200
 

@@ -4,4 +4,4 @@ franka_fingerpad_length: 0.017608  # distance from top of inner surface of finge
 franka_gripper_width_max: 0.080  # maximum opening width of gripper
 
 table_depth: 0.6  # depth of table
-table_width: 1.0  # width of table
+table_width: 1.2  # width of table

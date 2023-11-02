@@ -478,23 +478,17 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
         finger_penalty = self.ctrl_target_gripper_dof_pos * rem_time*0.05
         
-        pos_reward = 0.5 - self.cube_pos[:, 2]
-        # self.rew_buf[:] = keypoint_reward * self.cfg_task.rl.keypoint_reward_scale \
-        #                   - action_penalty * self.cfg_task.rl.action_penalty_scale \
-        #                   - finger_penalty * self.cfg_task.rl.finger_penalty_scale \
-        #                   + (self.cube_pos[:, 2] -  self.cfg_base.env.table_height)
-        
-        self.rew_buf[:] =  (self.cube_pos[:, 2] -  self.cfg_base.env.table_height) \
-                            - action_penalty * self.cfg_task.rl.action_penalty_scale 
+        goal_pos = torch.tensor([0.0, 0.0, 0.7], device=self.device).repeat(self.num_envs,1)
+        dist_penalty = torch.norm(goal_pos - self.cube_pos,dim=1)
+
+        dist_reward = 1.0 / (1.0 + dist_penalty**2)
+        #dist_reward *= dist_reward
+        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
 
         # Start rewarding lift in last 50 steps
-        is_lifting_time = (self.progress_buf[0] >= self.max_episode_length - 50)
-        if is_lifting_time:
-            self.rew_buf[:] += (self.cube_pos[:, 2] -  self.cfg_base.env.table_height) * 2.0
-
-        is_launching_time = (self.progress_buf[0] >= self.max_episode_length - 5)
-        if is_launching_time:
-            self.rew_buf[:] += (self.cube_pos[:, 2] -  self.cfg_base.env.table_height) * 200.0
+        is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
+        if is_ending:
+            self.rew_buf[:] += dist_reward * self.cfg_task.rl.dist_reward_scale 
 
 
         # In this policy, episode length is constant across all envs
@@ -502,10 +496,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         if is_last_step:
             # Check if cube is picked up and above table
-            lift_success = self._check_lift_success(height_multiple=3.0)
-            self.rew_buf[:] += lift_success * self.cfg_task.rl.success_bonus
-            
-            self.extras['successes'] = torch.mean(lift_success.float())
+            self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
+            #lift_success = self._check_lift_success(height_multiple=3.0)
+            #self.rew_buf[:] += lift_success * self.cfg_task.rl.success_bonus
+            self.extras['successes'] = torch.mean(dist_penalty.float())
 
 
 
