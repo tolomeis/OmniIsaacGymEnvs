@@ -73,7 +73,14 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         ppo_path = 'train/FactoryTaskNutBoltPickPPO.yaml'  # relative to Gym's Hydra search path (cfg dir)
         self.cfg_ppo = hydra.compose(config_name=ppo_path)
         self.cfg_ppo = self.cfg_ppo['train']  # strip superfluous nesting
-    
+        self.level = 0.0
+        self.freezed_reward = torch.zeros((self.num_envs,1), device=self.device)
+        self.episode_sums = {
+            "dist_from_goal": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+
+        }
+
 
     def post_reset(self):
         """
@@ -172,6 +179,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self._refresh_task_tensors()
 
         self._reset_franka(env_ids)
+        self.extras["episode"] = {}
+        for key in self.episode_sums.keys():
+            self.extras["episode"]["rew_" + key] = (
+                torch.mean(self.episode_sums[key][env_ids])
+            )
+            self.episode_sums[key][env_ids] = 0.0
 
         # self._randomize_gripper_pose(env_ids, sim_steps=self.cfg_task.env.num_gripper_move_sim_steps)
         
@@ -275,7 +288,17 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
-
+        # Goal position
+        # FIXME: doesn't take into account env_ids
+        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
+        goal_noise_xy = goal_noise_xy @ torch.diag(
+            torch.tensor(self.cfg_task.randomize.goal_noise, device=self.device))
+        
+        self.goal_cube_pos[:, 0] += goal_noise_xy[:, 0]
+        self.goal_cube_pos[:, 1] +=  goal_noise_xy[:, 1]
+        sphere_pos = self.goal_cube_pos + self.env_pos
+        self._sphere.set_world_poses(sphere_pos, self.cube_grasp_quat_local)
       
 
 

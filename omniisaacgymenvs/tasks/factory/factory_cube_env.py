@@ -46,9 +46,11 @@ import omniisaacgymenvs.tasks.factory.factory_control as fc
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.prims import get_prim_at_path
 from omni.isaac.core.utils.stage import get_current_stage
-from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim
+from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim, XFormPrimView
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
+from omni.isaac.core.objects import VisualSphere
+
 
 
 from omniisaacgymenvs.tasks.base.rl_task import RLTask
@@ -85,6 +87,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
     def set_up_scene(self, scene) -> None:
         self.import_franka_assets()
         self.get_cube()
+        self.get_sphere()
         
         RLTask.set_up_scene(self, scene, replicate_physics=False)
 
@@ -92,6 +95,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         self._cube = RigidPrimView(prim_paths_expr="/World/envs/.*/cube", 
                                    name="cube_view", 
                                    reset_xform_properties=False)
+        self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
         scene.add(self.frankas._lfingers)
@@ -110,13 +114,21 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         cube = DynamicCuboid(
             prim_path=self.default_zero_env_path + "/cube",
             name="cube",
-            color=torch.tensor([0.2, 0.4, 0.6]),
+            color=torch.tensor([0.0, 0.5, 1.0]),
             size=0.02,  # Cube size is 2x2x2cm
             density=100.0,
             position=cube_pos.numpy()
         )
         self._sim_config.apply_articulation_settings("cube", get_prim_at_path(cube.prim_path), self._sim_config.parse_actor_config("cube"))
 
+    def get_sphere(self):
+        sphere = VisualSphere(
+            prim_path=self.default_zero_env_path + "/sphere",
+            name="sphere",
+            color=torch.tensor([1.0, 0.0, 0.0]),
+            radius=0.01
+        )
+        self._sim_config.apply_articulation_settings("sphere", get_prim_at_path(sphere.prim_path), self._sim_config.parse_actor_config("sphere"))
 
 
     def _import_env_assets(self):
