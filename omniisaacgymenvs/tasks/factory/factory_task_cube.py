@@ -65,11 +65,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cfg_task = omegaconf.OmegaConf.create(self._task_cfg)
         self.max_episode_length = self.cfg_task.rl.max_episode_length  # required instance var for VecTask
 
-        # removed from nut
-        # asset_info_path = '../tasks/factory/yaml/factory_asset_info_nut_bolt.yaml'  # relative to Gym's Hydra search path (cfg dir)
-        # self.asset_info_nut_bolt = hydra.compose(config_name=asset_info_path)
-        # self.asset_info_nut_bolt = self.asset_info_nut_bolt['']['']['']['tasks']['factory']['yaml']  # strip superfluous nesting
-
         ppo_path = 'train/FactoryTaskNutBoltPickPPO.yaml'  # relative to Gym's Hydra search path (cfg dir)
         self.cfg_ppo = hydra.compose(config_name=ppo_path)
         self.cfg_ppo = self.cfg_ppo['train']  # strip superfluous nesting
@@ -105,14 +100,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     
 
     def _acquire_task_tensors(self):
-        """Acquire tensors."""
-        # removed from nut
-        # nut_grasp_heights = self.bolt_head_heights + self.nut_heights * 0.5  # nut COM
-        # self.nut_grasp_pos_local = nut_grasp_heights * torch.tensor([0.0, 0.0, 1.0], device=self._device).repeat(
-        #     (self._num_envs, 1))
-        # self.nut_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).unsqueeze(0).repeat(
-        #     self._num_envs, 1)
-        
+        """Acquire tensors."""       
         # Grasp pose tensors
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
@@ -404,7 +392,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         """Compute observations."""
         # Shallow copies of tensors
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
-        d_to_goal = (self.cube_cube_pos - self.goal_cube_pos)
+        d_to_goal = (self.goal_cube_pos - self.cube_pos)
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
 
         obs_tensors = [self.fingertip_midpoint_pos,
@@ -447,12 +435,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     def _update_rew_buf(self):
         """Compute reward at current timestep."""
         rem_time =  self.max_episode_length - self.progress_buf[0] 
+        
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
+        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
         
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1)
-
         dist_reward = 1.0 / (1.0 + dist_penalty**2)
-        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
 
         # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
