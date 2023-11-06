@@ -1,38 +1,18 @@
-# Copyright (c) 2018-2022, NVIDIA Corporation
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice, this
-#    list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright (c) 2023, Simone Tolomei
 
-"""Factory: Class for cube pick task.
+""" Time-Driven Manipulation
 
-Inherits cube environment class and abstract task class (not enforced). Can be executed with
-python train.py task=FactoryTaskNutBoltPick
+This script implements a time-driven manipulation task for the Franka Panda robot in Isaac Gym. 
+The robot learns to perform a movement task with a cube. The cube is spawned at a random
+location on the table and the robot has to pick it up and place it at a target location.
+The training script doesn't enforce any pick-and-place behavior, but the robot learns it
+by itself. The task is considered successful if the cube is within a specific distance from
+the target location at the end of the episode.
+
+To run this script, execute the following command from the root of the repository:
+ /isaac-sim/python.sh omniisaacgymenvs/scripts/rlgames_train.py task=FactoryCube
 """
 
-import asyncio
 
 import hydra
 import omegaconf
@@ -104,6 +84,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Grasp pose tensors
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
+        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
 
     
     def pre_physics_step(self, actions) -> None:
@@ -124,27 +105,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             do_scale=True
         )
 
-    async def pre_physics_step_async(self, actions) -> None:
-        """Reset environments. Apply actions from policy. Simulation step called after this method."""
-
-        if not self._env._world.is_playing():
-            return
-
-        env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
-        if len(env_ids) > 0:
-            await self.reset_idx_async(env_ids, randomize_gripper_pose=True)
-
-        self.actions = actions.clone().to(
-            self.device
-        )  # shape = (num_envs, num_actions); values = [-1, 1]
-
-        self._apply_actions_as_ctrl_targets(
-            actions=self.actions,
-            ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
-            do_scale=True,
-        )
-
-
     def reset_idx(self, env_ids):
         """Reset specified environments."""
 
@@ -155,6 +115,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self._refresh_task_tensors()
 
         self._reset_franka(env_ids)
+
+        # Reset buffers and metrics
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]["rew_" + key] = (
@@ -169,19 +131,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self._reset_buffers(env_ids)
     
-    async def reset_idx_async(self, env_ids, randomize_gripper_pose=True) -> None:
-        """Reset specified environments."""
-        print("USING ASYNC")
-        self._reset_object(env_ids)
-        self._reset_franka(env_ids)
-
-        if randomize_gripper_pose:
-            await self._randomize_gripper_pose_async(
-                env_ids, sim_steps=self.cfg_task.env.num_gripper_move_sim_steps
-            )
-
-        self._reset_buffers(env_ids)
-
+  
 
     def _reset_franka(self, env_ids):
         """Reset DOF states and DOF targets of Franka."""
@@ -204,12 +154,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.refresh_env_tensors()
         self._refresh_task_tensors()
 
-
         # Now compute dof pos to grasp the cube
-        gripper_initial_grasp_pos = self.cube_grasp_pos[env_ids,:].clone().to(device=self.device)
-        #gripper_initial_grasp_pos[:,2] -= 0.005
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
-
       
         # step once to update physx with the newly set joint velocities
         self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
@@ -239,17 +185,15 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
         
-        # Goal position
-        # FIXME: doesn't take into account env_ids
-        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         goal_noise_xy = goal_noise_xy @ torch.diag(
             torch.tensor(self.cfg_task.randomize.goal_noise, device=self.device))
         
-        self.goal_cube_pos[:, 0] += goal_noise_xy[:, 0]
-        self.goal_cube_pos[:, 1] +=  goal_noise_xy[:, 1]
-        sphere_pos = self.goal_cube_pos + self.env_pos
-        self._sphere.set_world_poses(sphere_pos, self.cube_grasp_quat_local)
+        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
+        self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
+        self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
 
 
@@ -261,7 +205,17 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     
 
     def _apply_actions_as_ctrl_targets(self, actions, ctrl_target_gripper_dof_pos, do_scale):
-        """Apply actions from policy as position/rotation targets."""
+        """
+        Applies actions from policy as position/rotation targets.
+
+        Args:
+            actions (torch.Tensor): The actions to apply as position/rotation targets.
+            ctrl_target_gripper_dof_pos (torch.Tensor): The gripper DOF positions to apply.
+            do_scale (bool): Whether to scale the actions.
+
+        Returns:
+            None
+        """
 
         if self.cfg_task.ctrl.control_delta_q: 
             targetq = self.dt * actions @ torch.diag(torch.tensor(self.cfg_task.rl.deltaq_action_scale, device=self.device)) + self.dof_pos
@@ -334,35 +288,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                 if is_last_step:
                     self._close_gripper(sim_steps=self.cfg_task.env.num_gripper_close_sim_steps)
                     self._lift_gripper(sim_steps=self.cfg_task.env.num_gripper_lift_sim_steps)
-
-            self.refresh_base_tensors()
-            self.refresh_env_tensors()
-            self._refresh_task_tensors()
-            self.get_observations()
-            self.get_states()
-            self.calculate_metrics()
-            self.get_extras()
-
-        return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
-    
-    async def post_physics_step_async(self):
-        """Step buffers. Refresh tensors. Compute observations and reward. Reset environments."""
-
-        self.progress_buf[:] += 1
-
-        if self._env._world.is_playing():
-            # In this policy, episode length is constant
-            is_last_step = self.progress_buf[0] == self.max_episode_length - 1
-
-            if self.cfg_task.env.close_and_lift:
-                # At this point, robot has executed RL policy. Now close gripper and lift (open-loop)
-                if is_last_step:
-                    await self._close_gripper_async(
-                        sim_steps=self.cfg_task.env.num_gripper_close_sim_steps
-                    )
-                    await self._lift_gripper_async(
-                        sim_steps=self.cfg_task.env.num_gripper_lift_sim_steps
-                    )
 
             self.refresh_base_tensors()
             self.refresh_env_tensors()
@@ -449,7 +374,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.episode_sums['dist_from_goal'] += dist_reward * 10.0
 
         if (self.level <= 200):
-            # self.freezed_reward = self.cube_pos[:,2] * 2
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
 
         self.rew_buf[:] += self.freezed_reward
@@ -482,16 +406,21 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         return lift_success
     
 
-    def _randomize_gripper_pose(self, env_ids, sim_steps):
-        """Move gripper to random pose."""
+    def _randomize_gripper_pose(self, sim_steps=5):
+        """
+        Adds a random offset to the current gripper pose.
 
-        # step once to update physx with the newly set joint positions from reset_franka()
-        SimulationContext.step(self._env._world, render=True)
+        Args:
+            sim_steps (int): Number of simulation steps to perform.
 
+        Returns:
+            None
+        """
+        self.refresh_base_tensors()
+        self.refresh_env_tensors()
+        self._refresh_task_tensors()
         # Set target pos above table
-        self.ctrl_target_fingertip_midpoint_pos = torch.tensor([0.0, 0.0, self.cfg_base.env.table_height], device=self.device) \
-            + torch.tensor(self.cfg_task.randomize.fingertip_midpoint_pos_initial, device=self.device)
-        self.ctrl_target_fingertip_midpoint_pos = self.ctrl_target_fingertip_midpoint_pos.unsqueeze(0).repeat(self.num_envs, 1)
+        self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos.clone().to(device=self.device)
 
         fingertip_midpoint_pos_noise = 2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         fingertip_midpoint_pos_noise = fingertip_midpoint_pos_noise @ torch.diag(
@@ -501,14 +430,14 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
 
         # Set target rot
-        ctrl_target_fingertip_midpoint_euler = torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_initial,
-                                                            device=self.device).unsqueeze(0).repeat(self.num_envs, 1)
+        ctrl_target_fingertip_midpoint_euler = self.fingertip_midpoint_quat.clone().to(device=self.device)
 
         fingertip_midpoint_rot_noise = \
             2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
             torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
         ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
+
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
             ctrl_target_fingertip_midpoint_euler[:, 0],
             ctrl_target_fingertip_midpoint_euler[:, 1],
@@ -542,10 +471,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
             SimulationContext.step(self._env._world, render=True)
 
-        self.dof_vel[env_ids, :] = torch.zeros_like(self.dof_vel[env_ids])
-        
-        indices = env_ids.to(dtype=torch.int32)
-        self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
+        self.dof_vel[:, :] = torch.zeros_like(self.dof_vel[:])
+        idx = torch.arange(self._num_envs, dtype=torch.int64, device=self._device)
+        self.frankas.set_joint_velocities(self.dof_vel[:], indices=idx)
 
         # step once to update physx with the newly set joint velocities
         SimulationContext.step(self._env._world, render=True)
@@ -553,7 +481,17 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
 
     def set_gripper_to(self, target_gripper_pose, target_quat, sim_steps=100):
-        """Perform CLIK to move the gripper to specific pose"""
+        """
+        Moves the gripper to a specific pose using CLIK (Closed-Loop Inverse Kinematics).
+
+        Args:
+            target_gripper_pose (torch.Tensor): The desired position of the gripper in the world frame, as a 3D tensor.
+            target_quat (torch.Tensor): The desired orientation of the gripper in the world frame, as a quaternion tensor.
+            sim_steps (int, optional): The number of simulation steps to perform. Defaults to 100.
+
+        Returns:
+            None
+        """
         ctrl_target_dof_pos = torch.zeros_like(self.dof_pos, device=self.device)
 
         for _ in range(sim_steps):
@@ -590,4 +528,3 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
             SimulationContext.step(self._env._world, render=True)
             
-
