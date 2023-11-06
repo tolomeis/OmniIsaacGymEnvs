@@ -117,18 +117,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
 
-        # Keypoint tensors
-        self.keypoint_offsets = self._get_keypoint_offsets(
-            self.cfg_task.rl.num_keypoints) * self.cfg_task.rl.keypoint_scale
-        
-        self.keypoints_gripper = torch.zeros(
-            (self._num_envs, self.cfg_task.rl.num_keypoints, 3),
-            dtype=torch.float32,
-            device=self._device
-        )
-        self.keypoints_cube = torch.zeros_like(self.keypoints_gripper, device=self._device)
-        self.identity_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self._device).unsqueeze(0).repeat(self._num_envs, 1)
-
     
     def pre_physics_step(self, actions) -> None:
         """Reset environments. Apply actions from policy. Simulation step called after this method."""
@@ -234,33 +222,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         #gripper_initial_grasp_pos[:,2] -= 0.005
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
 
-        #self.set_gripper_to(gripper_initial_grasp_pos, gripper_initial_grasp_quat)
-        #dof = self._get_franka_dof(gripper_initial_grasp_pos, gripper_initial_grasp_quat,self.asset_info_franka_table.franka_gripper_width_max)
-
-        #print(self.dof_pos[0, 0:7])
-        # delta_dof = fc.compute_dof_pos_target(
-        #     cfg_ctrl = self.cfg_ctrl,
-        #     arm_dof_pos =                           self.dof_pos[:, 0:7],
-        #     fingertip_midpoint_pos =                self.fingertip_midpoint_pos,
-        #     fingertip_midpoint_quat =               self.fingertip_midpoint_quat,
-        #     jacobian =                              self.fingertip_midpoint_jacobian,
-        #     ctrl_target_fingertip_midpoint_pos =    gripper_initial_grasp_pos,
-        #     ctrl_target_fingertip_midpoint_quat =   gripper_initial_grasp_quat,
-        #     ctrl_target_gripper_dof_pos =           self.asset_info_franka_table.franka_gripper_width_max,
-        #     device = self.device,
-        # )
-
-        # self.dof_pos[:, 0:7] += delta_dof
-
-        # print('df computed by func')
-        # print(dof[0, 0:7])
-
-        # self.dof_pos[env_ids] = dof[env_ids]
-        # self.dof_vel[env_ids] = 0.0  # shape = (num_envs, num_dofs)
-        # self.frankas.set_joint_positions(positions=self.dof_pos[env_ids], indices=indices)
-        # self.frankas.set_joint_position_targets(positions=self.dof_pos[env_ids], indices=indices)
-        # self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
-
+      
         # step once to update physx with the newly set joint velocities
         self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
         self.refresh_base_tensors()
@@ -288,6 +250,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
+        
         # Goal position
         # FIXME: doesn't take into account env_ids
         self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
@@ -434,36 +397,24 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.cube_grasp_pos_local,
         )
 
-        # Compute pos of keypoints on gripper and cube in world frame
-        for idx, keypoint_offset in enumerate(self.keypoint_offsets):
-            self.keypoints_gripper[:, idx] = tf_combine(
-                self.fingertip_midpoint_quat,
-                self.fingertip_midpoint_pos,
-                self.identity_quat,
-                keypoint_offset.repeat(self.num_envs, 1)
-            )[1]
-            self.keypoints_cube[:, idx] = tf_combine(
-                self.cube_grasp_quat,
-                self.cube_grasp_pos,
-                self.identity_quat,
-                keypoint_offset.repeat(self.num_envs, 1)
-            )[1]
+
 
 
     def get_observations(self):
         """Compute observations."""
-
         # Shallow copies of tensors
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
-        #print(rem_time.size())
-        #print(self.cube_grasp_pos.size())
+        d_to_goal = (self.cube_cube_pos - self.goal_cube_pos)
+        d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
+
         obs_tensors = [self.fingertip_midpoint_pos,
-                       self.fingertip_midpoint_quat,
-                       self.fingertip_midpoint_linvel,
-                       self.fingertip_midpoint_angvel,
-                       self.cube_grasp_pos,
-                       self.cube_grasp_quat,
-                       rem_time ]
+                        self.fingertip_midpoint_quat,
+                        self.fingertip_midpoint_linvel,
+                        self.fingertip_midpoint_angvel,
+                        self.cube_grasp_pos,
+                        self.cube_grasp_quat,
+                        rem_time,
+                        d_to_goal]
 
         self.obs_buf = torch.cat(obs_tensors, dim=-1)  # shape = (num_envs, num_observations)
 
@@ -495,126 +446,48 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
     def _update_rew_buf(self):
         """Compute reward at current timestep."""
-
         rem_time =  self.max_episode_length - self.progress_buf[0] 
-        keypoint_reward = -self._get_keypoint_dist()
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
-        finger_penalty = self.ctrl_target_gripper_dof_pos * rem_time*0.05
         
-        goal_pos = torch.tensor([0.0, 0.0, 0.7], device=self.device).repeat(self.num_envs,1)
-        dist_penalty = torch.norm(goal_pos - self.cube_pos,dim=1)
+        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1)
 
         dist_reward = 1.0 / (1.0 + dist_penalty**2)
-        #dist_reward *= dist_reward
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
 
-        # Start rewarding lift in last 50 steps
+        # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
         if is_ending:
-            self.rew_buf[:] += dist_reward * self.cfg_task.rl.dist_reward_scale 
+            self.rew_buf[:] += dist_reward * 10.0
+            self.episode_sums['dist_from_goal'] += dist_reward * 10.0
 
+        if (self.level <= 200):
+            # self.freezed_reward = self.cube_pos[:,2] * 2
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
 
+        self.rew_buf[:] += self.freezed_reward
+        self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
+        
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
+
 
         if is_last_step:
             # Check if cube is picked up and above table
             self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
-            #lift_success = self._check_lift_success(height_multiple=3.0)
-            #self.rew_buf[:] += lift_success * self.cfg_task.rl.success_bonus
-            self.extras['successes'] = torch.mean(dist_penalty.float())
-
-
-
-    def _get_keypoint_offsets(self, num_keypoints):
-        """Get uniformly-spaced keypoints along a line of unit length, centered at 0."""
-
-        keypoint_offsets = torch.zeros((num_keypoints, 3), device=self._device)
-        keypoint_offsets[:, -1] = torch.linspace(0.0, 1.0, num_keypoints, device=self._device) - 0.5
-
-        return keypoint_offsets
-    
-
-    def _get_keypoint_dist(self):
-        """Get keypoint distance."""
-
-        keypoint_dist = torch.sum(torch.norm(self.keypoints_cube - self.keypoints_gripper, p=2, dim=-1), dim=-1)
-        return keypoint_dist
-
-
-    def _close_gripper(self, sim_steps=20):
-        """Fully close gripper using controller. Called outside RL loop (i.e., after last step of episode)."""
-        self._move_gripper_to_dof_pos(gripper_dof_pos=0.0, sim_steps=sim_steps)
-    
-
-    def _move_gripper_to_dof_pos(self, gripper_dof_pos, sim_steps=20):
-        """Move gripper fingers to specified DOF position using controller."""
-        delta_hand_pose = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)  # No hand motion
-        self._apply_actions_as_ctrl_targets(delta_hand_pose, gripper_dof_pos, do_scale=False)
-        
-        # Step sim
-        for _ in range(sim_steps):
-            SimulationContext.step(self._env._world, render=True)
-    
-
-    def _lift_gripper(self, franka_gripper_width=0.0, lift_distance=0.3, sim_steps=20):
-        """Lift gripper by specified distance. Called outside RL loop (i.e., after last step of episode)."""
-
-        delta_hand_pose = torch.zeros([self.num_envs, 6], device=self.device)
-        delta_hand_pose[:, 2] = lift_distance
-
-        # Step sim
-        for _ in range(sim_steps):
-            self._apply_actions_as_ctrl_targets(delta_hand_pose, franka_gripper_width, do_scale=False)
-            SimulationContext.step(self._env._world, render=True)
-    
-    async def _close_gripper_async(self, sim_steps=20) -> None:
-        """Fully close gripper using controller. Called outside RL loop (i.e., after last step of episode)."""
-        await self._move_gripper_to_dof_pos_async(
-            gripper_dof_pos=0.0, sim_steps=sim_steps
-        )
-
-    async def _move_gripper_to_dof_pos_async(
-        self, gripper_dof_pos, sim_steps=20
-    ) -> None:
-        """Move gripper fingers to specified DOF position using controller."""
-
-        delta_hand_pose = torch.zeros(
-            (self.num_envs, self.cfg_task.env.numActions), device=self.device
-        )  # No hand motion
-        self._apply_actions_as_ctrl_targets(
-            delta_hand_pose, gripper_dof_pos, do_scale=False
-        )
-
-        # Step sim
-        for _ in range(sim_steps):
-            self._env._world.physics_sim_view.flush()
-            await omni.kit.app.get_app().next_update_async()
-
-    async def _lift_gripper_async(
-        self, franka_gripper_width=0.0, lift_distance=0.3, sim_steps=20
-    ) -> None:
-        """Lift gripper by specified distance. Called outside RL loop (i.e., after last step of episode)."""
-
-        delta_hand_pose = torch.zeros([self.num_envs, 6], device=self.device)
-        delta_hand_pose[:, 2] = lift_distance
-
-        # Step sim
-        for _ in range(sim_steps):
-            self._apply_actions_as_ctrl_targets(
-                delta_hand_pose, franka_gripper_width, do_scale=False
-            )
-            self._env._world.physics_sim_view.flush()
-            await omni.kit.app.get_app().next_update_async()
-
+            lift_success = self._check_lift_success(height_multiple=1.0)
+            #self.level += torch.mean(lift_success.float())
+            self.level += torch.mean(torch.norm(self.cube_linvel, dim=1))
+            self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
+            self.extras['cube_lifted'] = torch.mean(lift_success.float())
+            self.extras['level'] = self.level
+            
 
 
     def _check_lift_success(self, height_multiple):
         """Check if cube is above table by more than specified multiple times height of cube."""
 
         lift_success = torch.where(
-            self.cube_pos[:, 2] > self.cfg_base.env.table_height + 0.7,
-            # self.cube_pos[:, 2] > self.cfg_base.env.table_height + 0.05,
+            self.cube_pos[:, 2] > self.cfg_base.env.table_height + height_multiple * 0.02,
             torch.ones((self.num_envs,), device=self.device),
             torch.zeros((self.num_envs,), device=self.device))
 
@@ -690,114 +563,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         SimulationContext.step(self._env._world, render=True)
 
 
-    async def _randomize_gripper_pose_async(self, env_ids, sim_steps) -> None:
-        """Move gripper to random pose."""
-
-        # step once to update physx with the newly set joint positions from reset_franka()
-        await omni.kit.app.get_app().next_update_async()
-
-        # Set target pos above table
-        self.ctrl_target_fingertip_midpoint_pos = torch.tensor(
-            [0.0, 0.0, self.cfg_base.env.table_height], device=self.device
-        ) + torch.tensor(
-            self.cfg_task.randomize.fingertip_midpoint_pos_initial, device=self.device
-        )
-        self.ctrl_target_fingertip_midpoint_pos = (
-            self.ctrl_target_fingertip_midpoint_pos.unsqueeze(0).repeat(
-                self.num_envs, 1
-            )
-        )
-
-        fingertip_midpoint_pos_noise = 2 * (
-            torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            - 0.5
-        )  # [-1, 1]
-        fingertip_midpoint_pos_noise = fingertip_midpoint_pos_noise @ torch.diag(
-            torch.tensor(
-                self.cfg_task.randomize.fingertip_midpoint_pos_noise, device=self.device
-            )
-        )
-        self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
-
-        # Set target rot
-        ctrl_target_fingertip_midpoint_euler = (
-            torch.tensor(
-                self.cfg_task.randomize.fingertip_midpoint_rot_initial,
-                device=self.device,
-            )
-            .unsqueeze(0)
-            .repeat(self.num_envs, 1)
-        )
-        fingertip_midpoint_rot_noise = 2 * (
-            torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device)
-            - 0.5
-        )  # [-1, 1]
-        fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
-            torch.tensor(
-                self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device
-            )
-        )
-        ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
-        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
-            ctrl_target_fingertip_midpoint_euler[:, 0],
-            ctrl_target_fingertip_midpoint_euler[:, 1],
-            ctrl_target_fingertip_midpoint_euler[:, 2],
-        )
-
-        # Step sim and render
-        for _ in range(sim_steps):
-            self.refresh_base_tensors()
-            self.refresh_env_tensors()
-            self._refresh_task_tensors()
-
-            pos_error, axis_angle_error = fc.get_pose_error(
-                fingertip_midpoint_pos=self.fingertip_midpoint_pos,
-                fingertip_midpoint_quat=self.fingertip_midpoint_quat,
-                ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
-                ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,
-                jacobian_type=self.cfg_ctrl["jacobian_type"],
-                rot_error_type="axis_angle",
-            )
-
-            delta_hand_pose = torch.cat((pos_error, axis_angle_error), dim=-1)
-            actions = torch.zeros(
-                (self.num_envs, self.cfg_task.env.numActions), device=self.device
-            )
-            actions[:, :6] = delta_hand_pose
-
-            self._apply_actions_as_ctrl_targets(
-                actions=actions,
-                ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
-                do_scale=False,
-            )
-
-            self._env._world.physics_sim_view.flush()
-            await omni.kit.app.get_app().next_update_async()
-
-        self.dof_vel[env_ids, :] = torch.zeros_like(self.dof_vel[env_ids])
-
-        indices = env_ids.to(dtype=torch.int32)
-        self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
-
-        # step once to update physx with the newly set joint velocities
-        self._env._world.physics_sim_view.flush()
-        await omni.kit.app.get_app().next_update_async()
-
-    def _get_franka_dof(self, current_dof_pos, target_gripper_pose, target_quat, gripper_w):
-        """Set Franka DOF position target to move fingertips towards target pose."""
-
-        target_dof_pos = fc.compute_dof_pos_target(
-            cfg_ctrl = self.cfg_ctrl,
-            arm_dof_pos = current_dof_pos,
-            fingertip_midpoint_pos = self.fingertip_midpoint_pos,
-            fingertip_midpoint_quat = self.fingertip_midpoint_quat,
-            jacobian = self.fingertip_midpoint_jacobian,
-            ctrl_target_fingertip_midpoint_pos = target_gripper_pose,
-            ctrl_target_fingertip_midpoint_quat = target_quat,
-            ctrl_target_gripper_dof_pos = gripper_w,
-            device = self.device,
-        )
-        return target_dof_pos
 
     def set_gripper_to(self, target_gripper_pose, target_quat, sim_steps=100):
         """Perform CLIK to move the gripper to specific pose"""

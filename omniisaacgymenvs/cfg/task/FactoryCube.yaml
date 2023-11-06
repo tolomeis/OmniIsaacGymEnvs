@@ -89,15 +89,12 @@ sim:
     rest_offset: 0.0
 
 env:
-  controlFrequencyInv: 2 # 60 hz
+  controlFrequencyInv: 1 # 2 # 60 hz
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 21   # ... (1) remaining time
+  numObservations: 24   # ... (1) remaining time (3) goal position
   numActions: 14        # 12 for position (3), rotation (4),  forces (?) and gripper pose
 
   close_and_lift: False  # close gripper and lift after last step of episode
-  num_gripper_move_sim_steps: 40 #20  # number of timesteps to reserve for moving gripper before first step of episode
-  num_gripper_close_sim_steps: 50 #25  # number of timesteps to reserve for closing gripper after last step of episode
-  num_gripper_lift_sim_steps: 50 #25  # number of timesteps to reserve for lift after last step of episode
 
 randomize:
   #franka_arm_initial_dof_pos: [0.3413, -0.8011, -0.0670, -1.8299,  0.0266,  1.0185,  1.0927]
@@ -111,7 +108,7 @@ randomize:
   nut_pos_xy_initial_noise: [0.1, 0.1]  # noise on nut position
   bolt_pos_xy_initial: [0.0, 0.0]  # initial position of bolt on table
   bolt_pos_xy_noise: [0.1, 0.1]  # noise on bolt position
-
+  goal_noise: [0.05, 0.05] # [0.10, 0.10]
 rl:
   pos_action_scale: [0.1, 0.1, 0.1]
   rot_action_scale: [0.1, 0.1, 0.1]
@@ -125,10 +122,6 @@ rl:
   clamp_rot: True
   clamp_rot_thresh: 1.0e-6
 
-  num_keypoints: 4  # number of keypoints used in reward
-  keypoint_scale: 0.5  # length of line of keypoints
-
-  keypoint_reward_scale: 0.0  # scale on keypoint-based reward
   action_penalty_scale: 0.001  # scale on action penalty
   finger_penalty_scale: 0.0
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
@@ -183,3 +176,9 @@ ctrl:
     task_deriv_gains: [8, 8, 8, 8, 8, 8]
     force_ctrl_axes: [0, 0, 1, 0, 0, 0]
     wrench_prop_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+
+wandb_activate: true
+wandb_group: 'FrankaCube_nokickstart'
+wandb_name: ${train.params.config.name}
+wandb_entity: 'simone-tolomei'
+wandb_project: 'td-pick-place'
