@@ -90,7 +90,7 @@ sim:
 env:
   controlFrequencyInv: 1 # 2 # 60 hz
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 24   # ... (1) remaining time (3) goal position
+  numObservations: 24   # ... (1) remaining time (3) goal position (1) total time
   numActions: 14        # 12 for position (3), rotation (4),  forces (?) and gripper pose
 
   close_and_lift: False  # close gripper and lift after last step of episode

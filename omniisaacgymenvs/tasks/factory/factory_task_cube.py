@@ -84,6 +84,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
         self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
 
     
     def pre_physics_step(self, actions) -> None:
@@ -190,6 +191,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_pos[env_ids, 0]   = self.cfg_task.randomize.cube_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
         self.cube_pos[env_ids, 1]   = self.cfg_task.randomize.cube_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
         self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
+        self.cube_pos_initial = self.cube_pos.clone().to(device=self.device)
         self.cube_quat[env_ids, :]  = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
 
         self.cube_linvel[env_ids, :] = 0.0
@@ -197,7 +199,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
-        
+
+
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         goal_noise_xy = goal_noise_xy @ torch.diag(
@@ -339,9 +342,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                         self.cube_grasp_pos,
                         self.cube_grasp_quat,
                         rem_time,
-                        d_to_goal]
+                        d_to_goal,
+                        self.max_episode_length]
 
-        self.obs_buf = torch.cat(obs_tensors, dim=-1)  # shape = (num_envs, num_observations)
+        self.obs_buf = torch.cat(obs_tensors, dim=-1)  
 
         observations = {
             self.frankas.name: {
@@ -371,12 +375,14 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
     def _update_rew_buf(self):
         """Compute reward at current timestep."""
-        rem_time =  self.max_episode_length - self.progress_buf[0] 
+        #rem_time =  self.max_episode_length - self.progress_buf[0] 
         
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
         
-        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1)
+        # Normalize dist_penalty with respect to initial distance
+        initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_inital, dim=1)
+        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / initial_dist
         dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
         
         # Start rewarding lift in last 10 steps
@@ -385,8 +391,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale 
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
-        if (self.level <= 2.5):
+        if (self.level <= 5.0):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
+
 
         self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
