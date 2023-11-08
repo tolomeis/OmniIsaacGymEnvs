@@ -2,7 +2,6 @@
 
 defaults:
     - _self_
-    # - /factory_schema_config_task
 
 name: FactoryCube
 physics_engine: ${..physics_engine}
@@ -101,14 +100,15 @@ randomize:
   franka_arm_initial_dof_pos: [0.3592, -0.3093,  0.2254, -2.3489,  0.2915,  1.9132,  1.3769]
 
   fingertip_midpoint_pos_initial: [0.0, -0.2, 0.2]  # initial position of hand above table
-  fingertip_midpoint_pos_noise: [0.2, 0.2, 0.1]  # noise on hand position
+  fingertip_midpoint_pos_noise: [0.2, 0.2, 0.0]  # noise on hand position
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
   fingertip_midpoint_rot_noise: [0.3, 0.3, 1]  # noise on rotation
-  nut_pos_xy_initial: [0.0, 0.0]  # initial XY position of nut on table
-  nut_pos_xy_initial_noise: [0.1, 0.1]  # noise on nut position
-  bolt_pos_xy_initial: [0.0, 0.0]  # initial position of bolt on table
-  bolt_pos_xy_noise: [0.1, 0.1]  # noise on bolt position
-  goal_noise: [0.05, 0.05] # [0.10, 0.10]
+  cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
+  cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
+  goal_initial_pose:  [0.15, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
+  goal_noise_xy: [0.05, 0.05] # noise on goal position
+  ep_lenght_noise: 10 # samples, 20*0.08 = 1.6 seconds
+
 rl:
   pos_action_scale: [0.1, 0.1, 0.1]
   rot_action_scale: [0.1, 0.1, 0.1]
@@ -117,6 +117,7 @@ rl:
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
   gripper_action_scale: [1.0, 1.0]
+  goal_scale: 100.0
   deltaq_action_scale: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 
   clamp_rot: True

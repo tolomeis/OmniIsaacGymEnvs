@@ -19,7 +19,6 @@ import omegaconf
 import os
 import torch
 
-#from omniisaacgymenvs.tasks.factory.factory_env_nut_bolt import FactoryEnvNutBolt
 from omniisaacgymenvs.tasks.factory.factory_cube_env import FactoryCube
 from omniisaacgymenvs.tasks.factory.factory_schema_class_task import FactoryABCTask
 from omniisaacgymenvs.tasks.factory.factory_schema_config_task import FactorySchemaConfigTask
@@ -43,7 +42,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         cs.store(name='factory_schema_config_task', node=FactorySchemaConfigTask)
 
         self.cfg_task = omegaconf.OmegaConf.create(self._task_cfg)
-        self.max_episode_length = self.cfg_task.rl.max_episode_length  # required instance var for VecTask
+        self.max_episode_length = self.cfg_task.rl.max_episode_length  
 
         ppo_path = 'train/FactoryTaskNutBoltPickPPO.yaml'  # relative to Gym's Hydra search path (cfg dir)
         self.cfg_ppo = hydra.compose(config_name=ppo_path)
@@ -109,12 +108,13 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         """Reset specified environments."""
 
         self._reset_object(env_ids)
+        self._reset_task()
         SimulationContext.step(self._env._world, render=True)
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
-
         self._reset_franka(env_ids)
+        # self._randomize_gripper_pose(env_ids, sim_steps=10)
 
         # Reset buffers and metrics
         self.extras["episode"] = {}
@@ -124,14 +124,27 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
             self.episode_sums[key][env_ids] = 0.0
 
-        # self._randomize_gripper_pose(env_ids, sim_steps=self.cfg_task.env.num_gripper_move_sim_steps)
         
         # step once to update physx with the newly set joint positions from reset_franka()
         SimulationContext.step(self._env._world, render=True)
 
         self._reset_buffers(env_ids)
     
-  
+                      
+    def _reset_task(self):
+        """
+        Resets the task by initializing the maximum episode length and randomizing it.
+        """
+        self.max_episode_length = self.cfg_task.rl.max_episode_length
+        episode_lenght_noise = torch.randint(
+            - self.cfg_task.randomize.ep_lenght_noise,
+              self.cfg_task.randomize.ep_lenght_noise,
+            size=(1,1),dtype=torch.int32, device=self.device).item()
+        # episode_lenght_noise = torch_utils.np.random.randint(-self.cfg_task.randomize.ep_lenght_noise, 
+        #                                          self.cfg_task.randomize.ep_lenght_noise)
+        self.max_episode_length += episode_lenght_noise
+
+
 
     def _reset_franka(self, env_ids):
         """Reset DOF states and DOF targets of Franka."""
@@ -156,8 +169,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # Now compute dof pos to grasp the cube
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
-      
-        # step once to update physx with the newly set joint velocities
+        # gripper_initial_grasp_quat[:,2] += 0.01
+
+        # move gripper to grasp pose with CLIK
         self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
         self.refresh_base_tensors()
         self.refresh_env_tensors()
@@ -171,13 +185,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Randomize root state of cube
         cube_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         cube_noise_xy = cube_noise_xy @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.nut_pos_xy_initial_noise, device=self.device))
+            torch.tensor(self.cfg_task.randomize.cube_pos_xy_initial_noise, device=self.device))
         
-        self.cube_pos[env_ids, 0] = self.cfg_task.randomize.nut_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
-        self.cube_pos[env_ids, 1] = self.cfg_task.randomize.nut_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
-        self.cube_pos[env_ids, 2] = self.cfg_base.env.table_height + 0.005 # - self.bolt_head_heights.squeeze(-1)
-
-        self.cube_quat[env_ids, :] = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
+        self.cube_pos[env_ids, 0]   = self.cfg_task.randomize.cube_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
+        self.cube_pos[env_ids, 1]   = self.cfg_task.randomize.cube_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
+        self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
+        self.cube_quat[env_ids, :]  = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
 
         self.cube_linvel[env_ids, :] = 0.0
         self.cube_angvel[env_ids, :] = 0.0
@@ -188,9 +201,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         goal_noise_xy = goal_noise_xy @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.goal_noise, device=self.device))
+            torch.tensor(self.cfg_task.randomize.goal_noise_xy, device=self.device))
         
-        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
         self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
@@ -280,15 +293,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         if self._env._world.is_playing():
 
-            # In this policy, episode length is constant
-            is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
-
-            if self.cfg_task.env.close_and_lift:
-                # At this point, robot has executed RL policy. Now close gripper and lift (open-loop)
-                if is_last_step:
-                    self._close_gripper(sim_steps=self.cfg_task.env.num_gripper_close_sim_steps)
-                    self._lift_gripper(sim_steps=self.cfg_task.env.num_gripper_lift_sim_steps)
-
             self.refresh_base_tensors()
             self.refresh_env_tensors()
             self._refresh_task_tensors()
@@ -309,6 +313,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.cube_grasp_quat_local,
             self.cube_grasp_pos_local,
         )
+        
+
 
 
 
@@ -319,7 +325,13 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
         d_to_goal = (self.goal_cube_pos - self.cube_pos)
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
-
+        # normalized_fingertip_midpoint_pos = 
+        # normalized_fingertip_midpoint_quat =
+        # normalized_fingertip_midpoint_linvel =
+        # normalized_fingertip_midpoint_angvel = 
+        # normalized_cube_grasp_pos =
+        # normalized_cube_grasp_quat =
+        
         obs_tensors = [self.fingertip_midpoint_pos,
                         self.fingertip_midpoint_quat,
                         self.fingertip_midpoint_linvel,
@@ -365,15 +377,15 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
         
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1)
-        dist_reward = 1.0 / (1.0 + dist_penalty**2)
-
+        dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
+        
         # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
         if is_ending:
-            self.rew_buf[:] += dist_reward * 10.0
-            self.episode_sums['dist_from_goal'] += dist_reward * 10.0
+            self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale 
+            self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
-        if (self.level <= 200):
+        if (self.level <= 2.5):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
 
         self.rew_buf[:] += self.freezed_reward
