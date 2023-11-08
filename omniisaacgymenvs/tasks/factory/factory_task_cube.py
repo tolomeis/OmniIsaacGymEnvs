@@ -328,6 +328,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
         d_to_goal = (self.goal_cube_pos - self.cube_pos)
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
+        ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
+
         # normalized_fingertip_midpoint_pos = 
         # normalized_fingertip_midpoint_quat =
         # normalized_fingertip_midpoint_linvel =
@@ -343,7 +345,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                         self.cube_grasp_quat,
                         rem_time,
                         d_to_goal,
-                        self.max_episode_length]
+                        ep_length_tensor,]
 
         self.obs_buf = torch.cat(obs_tensors, dim=-1)  
 
@@ -381,7 +383,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
         
         # Normalize dist_penalty with respect to initial distance
-        initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_inital, dim=1)
+        initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / initial_dist
         dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
         

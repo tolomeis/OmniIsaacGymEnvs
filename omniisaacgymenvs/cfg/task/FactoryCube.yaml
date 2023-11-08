@@ -90,7 +90,16 @@ sim:
 env:
   controlFrequencyInv: 1 # 2 # 60 hz
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 24   # ... (1) remaining time (3) goal position (1) total time
+  numObservations: 25
+          # obs_tensors = [self.fingertip_midpoint_pos,     3
+          #               self.fingertip_midpoint_quat,     4
+          #               self.fingertip_midpoint_linvel,   3
+          #               self.fingertip_midpoint_angvel,   3
+          #               self.cube_grasp_pos,              3
+          #               self.cube_grasp_quat,             4
+          #               rem_time,                         1
+          #               d_to_goal,                        3
+          #               ep_length_tensor,]                1
   numActions: 8         # 12 for position (3), rotation (3), (2) gripper pose
 
   close_and_lift: False  # close gripper and lift after last step of episode
