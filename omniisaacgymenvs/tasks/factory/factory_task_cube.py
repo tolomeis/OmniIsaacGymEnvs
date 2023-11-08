@@ -233,9 +233,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             None
         """
 
-        if self.cfg_task.ctrl.control_delta_q: 
-            targetq = self.dt * actions @ torch.diag(torch.tensor(self.cfg_task.rl.deltaq_action_scale, device=self.device)) + self.dof_pos
-            self.frankas.set_joint_position_targets(positions=targetq)
+        # if self.cfg_task.ctrl.control_delta_q: 
+        #     targetq = self.dt * actions @ torch.diag(torch.tensor(self.cfg_task.rl.deltaq_action_scale, device=self.device)) + self.dof_pos
+        #     self.frankas.set_joint_position_targets(positions=targetq)
 
 
         # Interpret actions as target pos displacements and set pos target
@@ -261,23 +261,23 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
-        if self.cfg_ctrl['do_force_ctrl']:
-            # Interpret actions as target forces and target torques
-            force_actions = actions[:, 6:9]
-            if do_scale:
-                force_actions = force_actions @ torch.diag(
-                    torch.tensor(self.cfg_task.rl.force_action_scale, device=self.device))
+        # if self.cfg_ctrl['do_force_ctrl']:
+        #     # Interpret actions as target forces and target torques
+        #     force_actions = actions[:, 6:9]
+        #     if do_scale:
+        #         force_actions = force_actions @ torch.diag(
+        #             torch.tensor(self.cfg_task.rl.force_action_scale, device=self.device))
 
-            torque_actions = actions[:, 9:12]
-            if do_scale:
-                torque_actions = torque_actions @ torch.diag(
-                    torch.tensor(self.cfg_task.rl.torque_action_scale, device=self.device))
+        #     torque_actions = actions[:, 9:12]
+        #     if do_scale:
+        #         torque_actions = torque_actions @ torch.diag(
+        #             torch.tensor(self.cfg_task.rl.torque_action_scale, device=self.device))
 
-            self.ctrl_target_fingertip_contact_wrench = torch.cat((force_actions, torque_actions), dim=-1)
+        #     self.ctrl_target_fingertip_contact_wrench = torch.cat((force_actions, torque_actions), dim=-1)
 
         if self.cfg_task.ctrl.control_gripper:
             # Retrieve gripper DOF from actions and apply:
-            gripper_actions = actions[:,12:]
+            gripper_actions = actions[:,6:]
             if do_scale:
                 gripper_actions = gripper_actions @ torch.diag(
                     torch.tensor(self.cfg_task.rl.gripper_action_scale, device=self.device))
