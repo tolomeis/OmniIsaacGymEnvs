@@ -121,8 +121,8 @@ randomize:
 rl:
   # pos_action_scale: [0.1, 0.1, 0.1]
   # rot_action_scale: [0.1, 0.1, 0.1]  
-  pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.08 = 0.136
-  rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.08 = 0.2
+  pos_action_scale: [0.15, 0.15, 0.15] # 1.7m/s max cartesian speed -> 1.7*0.08 = 0.136
+  rot_action_scale: [0.3, 0.3, 0.3] # 2.5 rad/s max rot speed -> 2.5*0.08 = 0.2
 
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
