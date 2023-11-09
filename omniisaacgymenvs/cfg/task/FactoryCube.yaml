@@ -119,10 +119,11 @@ randomize:
   ep_lenght_noise: 20 # samples, 20*0.08 = 1.6 seconds
 
 rl:
-  pos_action_scale: [0.1, 0.1, 0.1]
-  rot_action_scale: [0.1, 0.1, 0.1]
-  # pos_action_scale: [0.0, 0.0, 0.0]
-  # rot_action_scale: [0.0, 0.0, 0.0]
+  # pos_action_scale: [0.1, 0.1, 0.1]
+  # rot_action_scale: [0.1, 0.1, 0.1]  
+  pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.08 = 0.136
+  rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.08 = 0.2
+
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
   gripper_action_scale: [1.0, 1.0]
