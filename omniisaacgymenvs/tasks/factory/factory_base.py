@@ -217,6 +217,12 @@ class FactoryBase(RLTask, FactoryABCBase):
             :, 0:7, 0:7
         ]  # for Franka arm (not gripper)
 
+        self.franka_coriolis_forces = self.frankas.get_coriolis_and_centrifugal_forces(clone=False)
+        self.arm_coriolis_forces = self.franka_coriolis_forces[:, 0:7]
+
+        self.franka_gravity_torque = self.frankas.get_generalized_gravity_forces(clone=False)
+        self.arm_gravity_torque = self.franka_gravity_torque[:, 0:7]
+
         self.hand_pos, self.hand_quat = self.frankas._hands.get_world_poses(clone=False)
         self.hand_pos -= self.env_pos
         hand_velocities = self.frankas._hands.get_velocities(clone=False)
@@ -310,6 +316,7 @@ class FactoryBase(RLTask, FactoryABCBase):
             "force_ctrl_method",
             "wrench_prop_gains",
             "force_ctrl_axes",
+            "use_computed_torque"
         }
         self.cfg_ctrl = {cfg_ctrl_key: None for cfg_ctrl_key in cfg_ctrl_keys}
 
@@ -350,7 +357,7 @@ class FactoryBase(RLTask, FactoryABCBase):
                 self.cfg_task.ctrl.joint_space_ik.joint_deriv_gains, device=self.device
             ).repeat((self.num_envs, 1))
             self.cfg_ctrl["do_inertial_comp"] = False
-        elif ctrl_type == "joint_space_id":
+        elif ctrl_type == "joint_space_id": 
             self.cfg_ctrl["motor_ctrl_mode"] = "manual"
             self.cfg_ctrl["gain_space"] = "joint"
             self.cfg_ctrl["ik_method"] = self.cfg_task.ctrl.joint_space_id.ik_method
@@ -361,6 +368,7 @@ class FactoryBase(RLTask, FactoryABCBase):
                 self.cfg_task.ctrl.joint_space_id.joint_deriv_gains, device=self.device
             ).repeat((self.num_envs, 1))
             self.cfg_ctrl["do_inertial_comp"] = True
+            self.cfg_ctrl["use_computed_torque"] = True
         elif ctrl_type == "task_space_impedance":
             self.cfg_ctrl["motor_ctrl_mode"] = "manual"
             self.cfg_ctrl["gain_space"] = "task"
@@ -548,11 +556,14 @@ class FactoryBase(RLTask, FactoryABCBase):
             right_finger_force=self.right_finger_force,
             jacobian=self.fingertip_midpoint_jacobian_tf,
             arm_mass_matrix=self.arm_mass_matrix,
+            arm_coriolis_forces=self.arm_coriolis_forces,
+            arm_gravity_torque=self.arm_gravity_torque,
             ctrl_target_gripper_dof_pos=self.ctrl_target_gripper_dof_pos,
             ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
             ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,
             ctrl_target_fingertip_contact_wrench=self.ctrl_target_fingertip_contact_wrench,
             device=self.device,
+            dt = self._task_cfg["sim"]["dt"],
         )
 
         self.frankas.set_joint_efforts(efforts=self.dof_torque)

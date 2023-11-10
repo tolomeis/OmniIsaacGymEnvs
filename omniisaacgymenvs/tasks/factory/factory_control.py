@@ -87,11 +87,14 @@ def compute_dof_torque(
     right_finger_force,
     jacobian,
     arm_mass_matrix,
+    arm_coriolis_forces,
+    arm_gravity_torque,
     ctrl_target_gripper_dof_pos,
     ctrl_target_fingertip_midpoint_pos,
     ctrl_target_fingertip_midpoint_quat,
     ctrl_target_fingertip_contact_wrench,
     device,
+    dt,
 ):
     """Compute Franka DOF torque to move fingertips towards target pose."""
     # References:
@@ -111,23 +114,28 @@ def compute_dof_torque(
         )
         delta_fingertip_pose = torch.cat((pos_error, axis_angle_error), dim=1)
 
-        # Set tau = k_p * joint_pos_error - k_d * joint_vel_error (ETH eq. 3.72)
         delta_arm_dof_pos = _get_delta_dof_pos(
             delta_pose=delta_fingertip_pose,
             ik_method=cfg_ctrl["ik_method"],
             jacobian=jacobian,
             device=device,
         )
+        dof_vel_target = delta_arm_dof_pos / dt
+        # tau = Kp * e + Kd * e_dot
         dof_torque[:, 0:7] = cfg_ctrl[
             "joint_prop_gains"
-        ] * delta_arm_dof_pos + cfg_ctrl["joint_deriv_gains"] * (0.0 - dof_vel[:, 0:7])
+        ] * delta_arm_dof_pos + cfg_ctrl["joint_deriv_gains"] * (dof_vel_target - dof_vel[:, 0:7])
+
 
         if cfg_ctrl["do_inertial_comp"]:
-            # Set tau = M * tau, where M is the joint-space mass matrix
+            # tau = M(q)(Kp * e + Kd * e_dot) 
             arm_mass_matrix_joint = arm_mass_matrix
             dof_torque[:, 0:7] = (
                 arm_mass_matrix_joint @ dof_torque[:, 0:7].unsqueeze(-1)
             ).squeeze(-1)
+        if cfg_ctrl["use_computed_torque"]:
+            #  tau =  M(q)(Kp * e + Kd * e_dot) + C(q, q_dot)q_dot + g(q)
+            dof_torque[:, 0:7] += arm_coriolis_forces + arm_gravity_torque
 
     elif cfg_ctrl["gain_space"] == "task":
         task_wrench = torch.zeros((cfg_ctrl["num_envs"], 6), device=device)
