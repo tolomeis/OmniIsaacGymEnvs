@@ -209,7 +209,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
-        self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
+        if self.test:
+            self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
 
 
@@ -275,8 +276,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                     torch.tensor(self.cfg_task.rl.gripper_action_scale, device=self.device))
 
             self.ctrl_target_gripper_dof_pos = gripper_actions
-        #self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
-        
 
         self.generate_ctrl_signals()
 
