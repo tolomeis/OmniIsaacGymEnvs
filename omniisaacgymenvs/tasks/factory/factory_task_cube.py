@@ -244,6 +244,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             pos_actions = pos_actions @ torch.diag(torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device))
         self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos + pos_actions
 
+
         # Interpret actions as target rot (axis-angle) displacements
         rot_actions = actions[:, 3:6]
         if do_scale:
@@ -261,19 +262,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
-        # if self.cfg_ctrl['do_force_ctrl']:
-        #     # Interpret actions as target forces and target torques
-        #     force_actions = actions[:, 6:9]
-        #     if do_scale:
-        #         force_actions = force_actions @ torch.diag(
-        #             torch.tensor(self.cfg_task.rl.force_action_scale, device=self.device))
-
-        #     torque_actions = actions[:, 9:12]
-        #     if do_scale:
-        #         torque_actions = torque_actions @ torch.diag(
-        #             torch.tensor(self.cfg_task.rl.torque_action_scale, device=self.device))
-
-        #     self.ctrl_target_fingertip_contact_wrench = torch.cat((force_actions, torque_actions), dim=-1)
+        if self.test:
+            self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
+                                     self.ctrl_target_fingertip_midpoint_quat,
+                                    torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
 
         if self.cfg_task.ctrl.control_gripper:
             # Retrieve gripper DOF from actions and apply:
