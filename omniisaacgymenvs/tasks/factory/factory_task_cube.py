@@ -55,6 +55,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         }
 
+        self.identity_quat = (
+            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+            .unsqueeze(0)
+            .repeat(self.num_envs, 1)
+        )
+
 
     def post_reset(self):
         """
@@ -170,10 +176,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # Now compute dof pos to grasp the cube
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
-        # gripper_initial_grasp_quat[:,2] += 0.01
+        # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
+        target_p = self.cube_grasp_pos.clone().to(device=self.device)
+        #target_p[:,2] += 0.35
 
         # move gripper to grasp pose with CLIK
-        self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
+        self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
@@ -209,7 +217,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
-        self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
+        if self.test:
+            self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
 
 
@@ -262,10 +271,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
-        if self.test:
-            self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
-                                     self.ctrl_target_fingertip_midpoint_quat,
-                                    torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
 
         if self.cfg_task.ctrl.control_gripper:
             # Retrieve gripper DOF from actions and apply:
@@ -275,9 +280,16 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                     torch.tensor(self.cfg_task.rl.gripper_action_scale, device=self.device))
 
             self.ctrl_target_gripper_dof_pos = gripper_actions
-        #self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
         
+        ## USED TUNING CT GAINS:
+        # dir = (self.goal_cube_pos + self.cube_grasp_pos ) / 2.0
+        # self.ctrl_target_fingertip_midpoint_pos = dir
+        # self.ctrl_target_fingertip_midpoint_quat = self.cube_grasp_quat.clone().to(device=self.device)
 
+        if self.test:
+            self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
+                                     self.ctrl_target_fingertip_midpoint_quat,
+                                    torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
         self.generate_ctrl_signals()
 
 

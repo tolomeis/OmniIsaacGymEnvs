@@ -8,7 +8,7 @@ physics_engine: ${..physics_engine}
 
 sim:
   use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
-  dt: 0.00833333333 #0.016667  # required, but overridden in FactoryBase.yaml
+  dt:  0.008 #0.00833333333 #0.016667  # required, but overridden in FactoryBase.yaml
   gravity: [0.0, 0.0, -9.81]  # required, but overridden in base FactoryBase.yaml
   gravity_mag: 9.81
   disable_gravity: False
@@ -167,8 +167,10 @@ ctrl:
   joint_space_id:
     ik_method: dls
     #FIXME: these gains are too low
-    joint_prop_gains: [200, 140, 100, 40, 40, 40, 40]
-    joint_deriv_gains: [40, 35, 18, 8, 8, 8, 8]
+    # joint_prop_gains: [100, 70, 50, 40, 40, 40, 40]
+    # joint_deriv_gains: [80, 60, 18, 8, 8, 8, 8]
+    joint_prop_gains: [300, 300, 300, 300, 150, 150, 30]
+    joint_deriv_gains: [30, 30, 30, 30, 15, 15, 3]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
     task_prop_gains: [40, 40, 40, 40, 40, 40]
