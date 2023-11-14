@@ -8,7 +8,7 @@ physics_engine: ${..physics_engine}
 
 sim:
   use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
-  dt:  0.008 #0.00833333333 #0.016667  # required, but overridden in FactoryBase.yaml
+  dt:  0.00833333333 #0.016667  # required, but overridden in FactoryBase.yaml
   gravity: [0.0, 0.0, -9.81]  # required, but overridden in base FactoryBase.yaml
   gravity_mag: 9.81
   disable_gravity: False
@@ -133,11 +133,11 @@ rl:
   clamp_rot: True
   clamp_rot_thresh: 1.0e-6
 
-  action_penalty_scale: 0.001  # scale on action penalty
+  action_penalty_scale: 0.01  # scale on action penalty
   finger_penalty_scale: 0.0
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
 
-  max_episode_length: 100 # 200
+  max_episode_length: 150 # 200
 
   success_bonus: 100.0  # bonus if nut has been lifted
 

@@ -91,6 +91,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
         self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
+        self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
 
     
     def pre_physics_step(self, actions) -> None:
@@ -178,7 +179,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        #target_p[:,2] += 0.35
+        target_p[:,2] += 0.01
 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
@@ -217,6 +218,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
+        self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
         if self.test:
             self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
@@ -384,21 +386,21 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         #rem_time =  self.max_episode_length - self.progress_buf[0] 
         
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
-        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
+        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length 
+        # this is done to normalize the action penalty with respect to the episode length
         
         # Normalize dist_penalty with respect to initial distance
-        initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
-        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / initial_dist
+        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
         dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
         
         # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
         if is_ending:
-            self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale 
+            self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
         if (self.level <= 5.0):
-            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0/self.max_episode_length
 
 
         self.rew_buf[:] += self.freezed_reward
@@ -406,8 +408,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
-
-
         if is_last_step:
             # Check if cube is picked up and above table
             self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
