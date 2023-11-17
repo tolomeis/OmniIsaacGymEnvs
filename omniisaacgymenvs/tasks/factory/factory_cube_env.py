@@ -49,7 +49,7 @@ from omni.isaac.core.utils.stage import get_current_stage
 from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim, XFormPrimView
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
-from omni.isaac.core.objects import VisualSphere
+from omni.isaac.core.objects import VisualSphere, VisualCylinder
 
 
 
@@ -87,7 +87,6 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
     def set_up_scene(self, scene) -> None:
         self.import_franka_assets()
         self.get_cube()
-        self.get_sphere()
         
         RLTask.set_up_scene(self, scene, replicate_physics=False)
 
@@ -95,13 +94,21 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         self._cube = RigidPrimView(prim_paths_expr="/World/envs/.*/cube", 
                                    name="cube_view", 
                                    reset_xform_properties=False)
-        self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
+        
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
         scene.add(self.frankas._lfingers)
         scene.add(self.frankas._rfingers)
         scene.add(self.frankas._fingertip_centered)
         scene.add(self._cube)
+        
+        if self._cfg["test"]:
+            self.get_gripper_cyl()
+            self.get_sphere()
+            self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
+            self._gripper_cyl = XFormPrimView(prim_paths_expr="/World/envs/.*/gripper_cyl", name="gripper_cyl_view")
+            scene.add(self._sphere)
+            scene.add(self._gripper_cyl)
         
         self.cube_inward_axis = torch.tensor([0, 0, -1], device=self._device, dtype=torch.float).repeat((self._num_envs, 1))
         self.cube_up_axis = torch.tensor([1, 0, 0], device=self._device, dtype=torch.float).repeat((self._num_envs, 1))
@@ -130,7 +137,16 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         )
         self._sim_config.apply_articulation_settings("sphere", get_prim_at_path(sphere.prim_path), self._sim_config.parse_actor_config("sphere"))
 
-
+    def get_gripper_cyl(self):
+        gripper_cyl = VisualCylinder(
+            prim_path=self.default_zero_env_path + "/gripper_cyl",
+            name="gripper_cyl",
+            color=torch.tensor([0.0, 1.0, 1.0]),
+            radius=0.01,
+            height=0.05
+        )
+        self._sim_config.apply_articulation_settings("gripper_cyl", get_prim_at_path(gripper_cyl.prim_path), self._sim_config.parse_actor_config("gripper_cyl"))
+    
     def _import_env_assets(self):
         """Set nut and bolt asset options. Import assets."""
 

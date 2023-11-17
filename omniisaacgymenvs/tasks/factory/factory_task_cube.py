@@ -52,8 +52,15 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.episode_sums = {
             "dist_from_goal": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
-
+            "pos_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
+        self.decimation = self._task_cfg["env"]["decimation"]
+        self.identity_quat = (
+            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+            .unsqueeze(0)
+            .repeat(self.num_envs, 1)
+        )
 
 
     def post_reset(self):
@@ -85,6 +92,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
         self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
+        self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
 
     
     def pre_physics_step(self, actions) -> None:
@@ -143,7 +151,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             size=(1,1),dtype=torch.int32, device=self.device).item()
         # episode_lenght_noise = torch_utils.np.random.randint(-self.cfg_task.randomize.ep_lenght_noise, 
         #                                          self.cfg_task.randomize.ep_lenght_noise)
-        self.max_episode_length += episode_lenght_noise
+        # self.max_episode_length += episode_lenght_noise
 
 
 
@@ -170,10 +178,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # Now compute dof pos to grasp the cube
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
-        # gripper_initial_grasp_quat[:,2] += 0.01
+        # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
+        target_p = self.cube_grasp_pos.clone().to(device=self.device)
+        # target_p[:,2] += 0.01
 
         # move gripper to grasp pose with CLIK
-        self.set_gripper_to(self.cube_grasp_pos, gripper_initial_grasp_quat, sim_steps=10)
+        self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
@@ -209,7 +219,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
-        self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
+        self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
+        if self.test:
+            self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
 
 
@@ -233,16 +245,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             None
         """
 
-        # if self.cfg_task.ctrl.control_delta_q: 
-        #     targetq = self.dt * actions @ torch.diag(torch.tensor(self.cfg_task.rl.deltaq_action_scale, device=self.device)) + self.dof_pos
-        #     self.frankas.set_joint_position_targets(positions=targetq)
-
-
         # Interpret actions as target pos displacements and set pos target
         pos_actions = actions[:, 0:3]
         if do_scale:
             pos_actions = pos_actions @ torch.diag(torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device))
         self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos + pos_actions
+
 
         # Interpret actions as target rot (axis-angle) displacements
         rot_actions = actions[:, 3:6]
@@ -261,19 +269,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
 
-        # if self.cfg_ctrl['do_force_ctrl']:
-        #     # Interpret actions as target forces and target torques
-        #     force_actions = actions[:, 6:9]
-        #     if do_scale:
-        #         force_actions = force_actions @ torch.diag(
-        #             torch.tensor(self.cfg_task.rl.force_action_scale, device=self.device))
-
-        #     torque_actions = actions[:, 9:12]
-        #     if do_scale:
-        #         torque_actions = torque_actions @ torch.diag(
-        #             torch.tensor(self.cfg_task.rl.torque_action_scale, device=self.device))
-
-        #     self.ctrl_target_fingertip_contact_wrench = torch.cat((force_actions, torque_actions), dim=-1)
 
         if self.cfg_task.ctrl.control_gripper:
             # Retrieve gripper DOF from actions and apply:
@@ -283,9 +278,16 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                     torch.tensor(self.cfg_task.rl.gripper_action_scale, device=self.device))
 
             self.ctrl_target_gripper_dof_pos = gripper_actions
-        #self.ctrl_target_gripper_dof_pos = ctrl_target_gripper_dof_pos
         
+        ## USED TUNING CT GAINS:
+        # dir = (self.goal_cube_pos + self.cube_grasp_pos ) / 2.0
+        # self.ctrl_target_fingertip_midpoint_pos = dir
+        # self.ctrl_target_fingertip_midpoint_quat = self.cube_grasp_quat.clone().to(device=self.device)
 
+        if self.test:
+            self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
+                                     self.ctrl_target_fingertip_midpoint_quat,
+                                    torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
         self.generate_ctrl_signals()
 
 
@@ -380,36 +382,38 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         #rem_time =  self.max_episode_length - self.progress_buf[0] 
         
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
-        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale 
+        self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length 
+        # this is done to normalize the action penalty with respect to the episode length
         
         # Normalize dist_penalty with respect to initial distance
-        initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
-        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / initial_dist
+        dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
         dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
         
         # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
         if is_ending:
-            self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale 
+            self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
-        if (self.level <= 5.0):
-            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0
+        if (self.level <= 100.0):
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0/self.max_episode_length
 
 
-        self.rew_buf[:] += self.freezed_reward
+        #self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
+        track_err = torch.norm(self.ctrl_target_fingertip_midpoint_pos - self.fingertip_midpoint_pos, dim=1)
+        rot_track_err = torch.norm(self.ctrl_target_fingertip_midpoint_quat - self.fingertip_midpoint_quat, dim=1)
+        self.episode_sums['pos_tracking_error'] += track_err
+        self.episode_sums['rot_tracking_error'] += rot_track_err
         
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
-
-
         if is_last_step:
             # Check if cube is picked up and above table
             self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
             lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
-            self.level += torch.mean(torch.norm(self.cube_linvel, dim=1))
+            self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
             self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level
