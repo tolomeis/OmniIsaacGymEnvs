@@ -8,7 +8,7 @@ physics_engine: ${..physics_engine}
 
 sim:
   use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
-  dt:  0.00833333333 #0.016667  # required, but overridden in FactoryBase.yaml
+  dt:  0.002 #0.016667  # required, but overridden in FactoryBase.yaml
   gravity: [0.0, 0.0, -9.81]  # required, but overridden in base FactoryBase.yaml
   gravity_mag: 9.81
   disable_gravity: False
@@ -89,6 +89,7 @@ sim:
 
 env:
   controlFrequencyInv: 1 # 2 # 60 hz
+  decimation: 1
   numEnvs: ${resolve_default:128,${...num_envs}}
   numObservations: 25
           # obs_tensors = [self.fingertip_midpoint_pos,     3
@@ -116,7 +117,7 @@ randomize:
   cube_pos_xy_initial_noise: [0.1, 0.1] #[0.1, 0.2]  # noise on nut position
   goal_initial_pose:  [0.0, 0.0, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
   goal_noise_xy: [0.25,  0.5] # noise on goal position
-  ep_lenght_noise: 20 # samples, 20*0.08 = 1.6 seconds
+  ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
 rl:
   # pos_action_scale: [0.1, 0.1, 0.1]
@@ -136,10 +137,8 @@ rl:
   action_penalty_scale: 0.01  # scale on action penalty
   finger_penalty_scale: 0.0
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
-
-  max_episode_length: 150 # 200
-
   success_bonus: 100.0  # bonus if nut has been lifted
+  max_episode_length: 1000 # 2 seconds
 
 ctrl:
   ctrl_type: joint_space_id  # {gym_default,
@@ -177,8 +176,8 @@ ctrl:
     task_deriv_gains: [8, 8, 8, 8, 8, 8]
   operational_space_motion:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
-    task_prop_gains: [1, 1, 1, 1, 1, 1]
-    task_deriv_gains: [1, 1, 1, 1, 1, 1]
+    task_prop_gains: [10, 10, 10, 10, 10, 10]
+    task_deriv_gains: [5, 5, 5, 5, 5, 5]
   open_loop_force:
     force_ctrl_axes: [0, 0, 1, 0, 0, 0]
   closed_loop_force:

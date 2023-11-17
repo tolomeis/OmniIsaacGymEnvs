@@ -52,9 +52,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.episode_sums = {
             "dist_from_goal": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
-
+            "pos_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
-
+        self.decimation = self._task_cfg["env"]["decimation"]
         self.identity_quat = (
             torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
             .unsqueeze(0)
@@ -150,7 +151,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             size=(1,1),dtype=torch.int32, device=self.device).item()
         # episode_lenght_noise = torch_utils.np.random.randint(-self.cfg_task.randomize.ep_lenght_noise, 
         #                                          self.cfg_task.randomize.ep_lenght_noise)
-        self.max_episode_length += episode_lenght_noise
+        # self.max_episode_length += episode_lenght_noise
 
 
 
@@ -179,7 +180,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.01
+        # target_p[:,2] += 0.01
 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
@@ -243,11 +244,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         Returns:
             None
         """
-
-        # if self.cfg_task.ctrl.control_delta_q: 
-        #     targetq = self.dt * actions @ torch.diag(torch.tensor(self.cfg_task.rl.deltaq_action_scale, device=self.device)) + self.dof_pos
-        #     self.frankas.set_joint_position_targets(positions=targetq)
-
 
         # Interpret actions as target pos displacements and set pos target
         pos_actions = actions[:, 0:3]
@@ -399,12 +395,16 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
-        if (self.level <= 5.0):
-            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*2.0/self.max_episode_length
+        if (self.level <= 100.0):
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0/self.max_episode_length
 
 
-        self.rew_buf[:] += self.freezed_reward
+        #self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
+        track_err = torch.norm(self.ctrl_target_fingertip_midpoint_pos - self.fingertip_midpoint_pos, dim=1)
+        rot_track_err = torch.norm(self.ctrl_target_fingertip_midpoint_quat - self.fingertip_midpoint_quat, dim=1)
+        self.episode_sums['pos_tracking_error'] += track_err
+        self.episode_sums['rot_tracking_error'] += rot_track_err
         
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
@@ -413,7 +413,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
             lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
-            self.level += torch.mean(torch.norm(self.cube_linvel, dim=1))
+            self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
             self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level

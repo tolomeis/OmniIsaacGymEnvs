@@ -120,7 +120,8 @@ def compute_dof_torque(
             jacobian=jacobian,
             device=device,
         )
-        dof_vel_target = delta_arm_dof_pos / dt
+        # dof_vel_target = delta_arm_dof_pos / dt
+        dof_vel_target = 0.0
         # tau = Kp * e + Kd * e_dot
         dof_torque[:, 0:7] = cfg_ctrl[
             "joint_prop_gains"
@@ -133,9 +134,9 @@ def compute_dof_torque(
             dof_torque[:, 0:7] = (
                 arm_mass_matrix_joint @ dof_torque[:, 0:7].unsqueeze(-1)
             ).squeeze(-1)
-        if cfg_ctrl["use_computed_torque"]:
-            #  tau =  M(q)(Kp * e + Kd * e_dot) + C(q, q_dot)q_dot 
-            dof_torque[:, 0:7] += arm_coriolis_forces
+        # if cfg_ctrl["use_computed_torque"]:
+        #     #  tau =  M(q)(Kp * e + Kd * e_dot) + C(q, q_dot)q_dot 
+        #     dof_torque[:, 0:7] += arm_coriolis_forces
             
     elif cfg_ctrl["gain_space"] == "task":
         task_wrench = torch.zeros((cfg_ctrl["num_envs"], 6), device=device)
@@ -152,12 +153,13 @@ def compute_dof_torque(
             delta_fingertip_pose = torch.cat((pos_error, axis_angle_error), dim=1)
 
             # Set tau = k_p * task_pos_error - k_d * task_vel_error (building towards eq. 3.96-3.98)
-            task_wrench_motion = _apply_task_space_gains(
+            task_wrench_motion = _apply_task_space_gains_v(
                 delta_fingertip_pose=delta_fingertip_pose,
                 fingertip_midpoint_linvel=fingertip_midpoint_linvel,
                 fingertip_midpoint_angvel=fingertip_midpoint_angvel,
                 task_prop_gains=cfg_ctrl["task_prop_gains"],
                 task_deriv_gains=cfg_ctrl["task_deriv_gains"],
+                dt=dt
             )
 
             if cfg_ctrl["do_inertial_comp"]:
@@ -365,6 +367,32 @@ def _apply_task_space_gains(
 
     return task_wrench
 
+
+def _apply_task_space_gains_v(
+    delta_fingertip_pose,
+    fingertip_midpoint_linvel,
+    fingertip_midpoint_angvel,
+    task_prop_gains,
+    task_deriv_gains,
+    dt
+):
+    """Interpret PD gains as task-space gains. Apply to task-space error."""
+
+    task_wrench = torch.zeros_like(delta_fingertip_pose)
+
+    # Apply gains to lin error components
+    lin_error = delta_fingertip_pose[:, 0:3]
+    task_wrench[:, 0:3] = task_prop_gains[:, 0:3] * lin_error + task_deriv_gains[
+        :, 0:3
+    ] * (lin_error/dt - fingertip_midpoint_linvel)
+
+    # Apply gains to rot error components
+    rot_error = delta_fingertip_pose[:, 3:6]
+    task_wrench[:, 3:6] = task_prop_gains[:, 3:6] * rot_error + task_deriv_gains[
+        :, 3:6
+    ] * (rot_error/dt - fingertip_midpoint_angvel)
+
+    return task_wrench
 
 def get_analytic_jacobian(fingertip_quat, fingertip_jacobian, num_envs, device):
     """Convert geometric Jacobian to analytic Jacobian."""
