@@ -145,12 +145,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         Resets the task by initializing the maximum episode length and randomizing it.
         """
         self.max_episode_length = self.cfg_task.rl.max_episode_length
-        episode_lenght_noise = torch.randint(
-            - self.cfg_task.randomize.ep_lenght_noise,
-              self.cfg_task.randomize.ep_lenght_noise,
-            size=(1,1),dtype=torch.int32, device=self.device).item()
-        # episode_lenght_noise = torch_utils.np.random.randint(-self.cfg_task.randomize.ep_lenght_noise, 
-        #                                          self.cfg_task.randomize.ep_lenght_noise)
+        # episode_lenght_noise = torch.randint(
+        #     - self.cfg_task.randomize.ep_lenght_noise,
+        #       self.cfg_task.randomize.ep_lenght_noise,
+        #     size=(1,1),dtype=torch.int32, device=self.device).item()
         # self.max_episode_length += episode_lenght_noise
 
 

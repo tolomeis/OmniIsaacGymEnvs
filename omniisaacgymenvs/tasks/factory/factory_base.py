@@ -217,11 +217,10 @@ class FactoryBase(RLTask, FactoryABCBase):
             :, 0:7, 0:7
         ]  # for Franka arm (not gripper)
 
-        self.franka_coriolis_forces = self.frankas.get_coriolis_and_centrifugal_forces(clone=False)
-        self.arm_coriolis_forces = self.franka_coriolis_forces[:, 0:7]
-
-        self.franka_gravity_torque = self.frankas.get_generalized_gravity_forces(clone=False)
-        self.arm_gravity_torque = self.franka_gravity_torque[:, 0:7]
+        # self.franka_coriolis_forces = self.frankas.get_coriolis_and_centrifugal_forces(clone=False)
+        # self.franka_gravity_torque = self.frankas.get_generalized_gravity_forces(clone=False)
+        
+        self.arm_coriolis_forces = torch.zeros((self.num_envs, 7), device=self.device)
 
         self.hand_pos, self.hand_quat = self.frankas._hands.get_world_poses(clone=False)
         self.hand_pos -= self.env_pos
@@ -557,7 +556,6 @@ class FactoryBase(RLTask, FactoryABCBase):
             jacobian=self.fingertip_midpoint_jacobian_tf,
             arm_mass_matrix=self.arm_mass_matrix,
             arm_coriolis_forces=self.arm_coriolis_forces,
-            arm_gravity_torque=self.arm_gravity_torque,
             ctrl_target_gripper_dof_pos=self.ctrl_target_gripper_dof_pos,
             ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
             ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,

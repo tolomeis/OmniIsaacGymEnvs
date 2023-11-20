@@ -88,7 +88,6 @@ def compute_dof_torque(
     jacobian,
     arm_mass_matrix,
     arm_coriolis_forces,
-    arm_gravity_torque,
     ctrl_target_gripper_dof_pos,
     ctrl_target_fingertip_midpoint_pos,
     ctrl_target_fingertip_midpoint_quat,
@@ -120,9 +119,9 @@ def compute_dof_torque(
             jacobian=jacobian,
             device=device,
         )
-        # dof_vel_target = delta_arm_dof_pos / dt
+        #dof_vel_target = delta_arm_dof_pos / dt
         dof_vel_target = 0.0
-        # tau = Kp * e + Kd * e_dot
+        #tau = Kp * e + Kd * e_dot
         dof_torque[:, 0:7] = cfg_ctrl[
             "joint_prop_gains"
         ] * delta_arm_dof_pos + cfg_ctrl["joint_deriv_gains"] * (dof_vel_target - dof_vel[:, 0:7])

@@ -8,7 +8,7 @@ physics_engine: ${..physics_engine}
 
 sim:
   use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
-  dt:  0.002 #0.016667  # required, but overridden in FactoryBase.yaml
+  dt:  0.005 #0.016667  # required, but overridden in FactoryBase.yaml
   gravity: [0.0, 0.0, -9.81]  # required, but overridden in base FactoryBase.yaml
   gravity_mag: 9.81
   disable_gravity: False
@@ -134,11 +134,11 @@ rl:
   clamp_rot: True
   clamp_rot_thresh: 1.0e-6
 
-  action_penalty_scale: 0.01  # scale on action penalty
+  action_penalty_scale: 0.001  # scale on action penalty
   finger_penalty_scale: 0.0
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
   success_bonus: 100.0  # bonus if nut has been lifted
-  max_episode_length: 1000 # 2 seconds
+  max_episode_length: 400 # 400*dt = 2 seconds
 
 ctrl:
   ctrl_type: joint_space_id  # {gym_default,
@@ -165,11 +165,9 @@ ctrl:
     joint_deriv_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   joint_space_id:
     ik_method: dls
-    #FIXME: these gains are too low
-    # joint_prop_gains: [100, 70, 50, 40, 40, 40, 40]
-    # joint_deriv_gains: [80, 60, 18, 8, 8, 8, 8]
-    joint_prop_gains: [300, 300, 300, 300, 150, 150, 30]
-    joint_deriv_gains: [30, 30, 30, 30, 15, 15, 3]
+    #TODO: find a decent tuning
+    joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
+    joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
     task_prop_gains: [40, 40, 40, 40, 40, 40]
