@@ -116,7 +116,7 @@ randomize:
   cube_pos_xy_initial:  [0.0, 0.0] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
   cube_pos_xy_initial_noise: [0.1, 0.1] #[0.1, 0.2]  # noise on nut position
   goal_initial_pose:  [0.0, 0.0, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
-  goal_noise_xy: [0.25,  0.5] # noise on goal position
+  goal_noise_xy: [0.25,  0.9] # noise on goal position
   ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
 rl:

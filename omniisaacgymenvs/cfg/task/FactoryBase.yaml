@@ -9,7 +9,7 @@ sim:
   disable_contact_processing: False
     
 env:
-  env_spacing: 2.0
+  env_spacing: 2.5
   franka_depth: 0.5
   table_height: 0.4
   franka_friction: 1.0
