@@ -87,13 +87,17 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
     def set_up_scene(self, scene) -> None:
         self.import_franka_assets()
         self.get_cube()
-        
+        # self.get_box()
+
         RLTask.set_up_scene(self, scene, replicate_physics=False)
 
         self.frankas = FactoryFrankaView(prim_paths_expr="/World/envs/.*/franka", name="frankas_view")
         self._cube = RigidPrimView(prim_paths_expr="/World/envs/.*/cube", 
                                    name="cube_view", 
                                    reset_xform_properties=False)
+        # self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
+        #                            name="box_view", 
+        #                            reset_xform_properties=False)
         
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
@@ -101,6 +105,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         scene.add(self.frankas._rfingers)
         scene.add(self.frankas._fingertip_centered)
         scene.add(self._cube)
+        # scene.add(self._box)
         
         if self._cfg["test"]:
             self.get_gripper_cyl()
@@ -147,87 +152,20 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         )
         self._sim_config.apply_articulation_settings("gripper_cyl", get_prim_at_path(gripper_cyl.prim_path), self._sim_config.parse_actor_config("gripper_cyl"))
     
+    # def get_box(self):
+    #     usd_path = '/workspace/omniisaacgymenvs/omniisaacgymenvs/tasks/factory/assets/small_KLT.usd'
+    #     add_reference_to_stage(usd_path, self.default_zero_env_path + "/box")
+    #     box_pos = torch.tensor([0.0, 0.5, self.cfg_base.env.table_height + 0.2])
+    #     box = RigidPrim(
+    #         prim_path=self.default_zero_env_path + "/box",
+    #         name="box",
+    #         position=box_pos.numpy(),
+    #         scale=(0.5, 0.5, 0.3)
+    #     )
+    #     self._sim_config.apply_articulation_settings("box", get_prim_at_path(box.prim_path), self._sim_config.parse_actor_config("box"))
+
     def _import_env_assets(self):
-        """Set nut and bolt asset options. Import assets."""
-
-        self.nut_heights = []
-        self.nut_widths_max = []
-        self.bolt_widths = []
-        self.bolt_head_heights = []
-        self.bolt_shank_lengths = []
-        self.thread_pitches = []
-
-        assets_root_path = get_assets_root_path()
-        
-        for i in range(0, self._num_envs):
-
-            j = np.random.randint(0, len(self.cfg_env.env.desired_subassemblies))
-            subassembly = self.cfg_env.env.desired_subassemblies[j]
-            components = list(self.asset_info_nut_bolt[subassembly])
-
-            nut_translation = torch.tensor([0.0, self.cfg_env.env.nut_lateral_offset, self.cfg_base.env.table_height], device=self._device)
-            nut_orientation = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self._device)
-
-            nut_height = self.asset_info_nut_bolt[subassembly][components[0]]['height']
-            nut_width_max = self.asset_info_nut_bolt[subassembly][components[0]]['width_max']
-            self.nut_heights.append(nut_height)
-            self.nut_widths_max.append(nut_width_max)
-
-            nut_file = assets_root_path + self.asset_info_nut_bolt[subassembly][components[0]]['usd_path']
-
-            add_reference_to_stage(nut_file, f"/World/envs/env_{i}" + "/nut")
-            nut_prim = XFormPrim(
-                prim_path=f"/World/envs/env_{i}" + "/nut",
-                translation=nut_translation,
-                orientation=nut_orientation,
-            )
-
-            physicsUtils.add_physics_material_to_prim(
-                self._stage, 
-                self._stage.GetPrimAtPath(f"/World/envs/env_{i}" + f"/nut/factory_{components[0][0:-6]}/collisions/mesh_0"), 
-                self.nutboltPhysicsMaterialPath
-            )
-
-            bolt_translation = torch.tensor([0.0, 0.0, self.cfg_base.env.table_height], device=self._device)
-            bolt_orientation = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self._device)
-
-            bolt_width = self.asset_info_nut_bolt[subassembly][components[1]]['width']
-
-            bolt_head_height = self.asset_info_nut_bolt[subassembly][components[1]]['head_height']
-            bolt_shank_length = self.asset_info_nut_bolt[subassembly][components[1]]['shank_length']
-            self.bolt_widths.append(bolt_width)
-            self.bolt_head_heights.append(bolt_head_height)
-            self.bolt_shank_lengths.append(bolt_shank_length)
-
-            bolt_file = assets_root_path + self.asset_info_nut_bolt[subassembly][components[1]]['usd_path']
-            add_reference_to_stage(bolt_file, f"/World/envs/env_{i}" + "/bolt")
-            XFormPrim(
-                prim_path=f"/World/envs/env_{i}" + "/bolt",
-                translation=bolt_translation,
-                orientation=bolt_orientation,
-            )
-
-            physicsUtils.add_physics_material_to_prim(
-                self._stage, 
-                self._stage.GetPrimAtPath(f"/World/envs/env_{i}" + f"/bolt/factory_{components[1][0:-6]}/collisions/mesh_0"), 
-                self.nutboltPhysicsMaterialPath
-            )
-
-            thread_pitch = self.asset_info_nut_bolt[subassembly]['thread_pitch']
-            self.thread_pitches.append(thread_pitch)
-
-        # For computing body COM pos
-        self.nut_heights = torch.tensor(self.nut_heights, device=self._device).unsqueeze(-1)
-        self.bolt_head_heights = torch.tensor(self.bolt_head_heights, device=self._device).unsqueeze(-1)
-
-        # For setting initial state
-        self.nut_widths_max = torch.tensor(self.nut_widths_max, device=self._device).unsqueeze(-1)
-        self.bolt_shank_lengths = torch.tensor(self.bolt_shank_lengths, device=self._device).unsqueeze(-1)
-
-        # For defining success or failure
-        self.bolt_widths = torch.tensor(self.bolt_widths, device=self._device).unsqueeze(-1)
-        self.thread_pitches = torch.tensor(self.thread_pitches, device=self._device).unsqueeze(-1)
-    
+        pass
 
     def refresh_env_tensors(self):
         """Refresh tensors."""
