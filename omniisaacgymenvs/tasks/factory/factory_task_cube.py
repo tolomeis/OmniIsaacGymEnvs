@@ -75,6 +75,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # super().post_reset()
         self.acquire_base_tensors()
         self._acquire_task_tensors()
+        self.init_curriculum()
 
         self.refresh_base_tensors()
         self.refresh_env_tensors()
@@ -82,8 +83,23 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # randomize all envs
         indices = torch.arange(self._num_envs, dtype=torch.int64, device=self._device)
+        # step curriculum every 
+        self.step_curriculum(indices)
         self.reset_idx(indices)
     
+    def init_curriculum(self):
+        self.goal_noise_curriculum_scale = 1.0
+        self.goal_noise_curriculum_scale_step = self.cfg_task.randomize.goal_noise_curriculum_scale_step
+        self.goal_noise_curriculum_scale_max = self.cfg_task.randomize.goal_noise_curriculum_scale_max
+        self.goal_noise_curriculum_interval = self.cfg_task.randomize.goal_noise_curriculum_interval
+
+    def step_curriculum(self, env_ids):
+        if self.cfg_task.randomize.goal_noise_curriculum:
+            # scale every goal_noise_curriculum_interval episodesù
+            if self.level % self.goal_noise_curriculum_interval == 0:
+                if self.goal_noise_curriculum_scale < self.goal_noise_curriculum_scale_max:
+                    self.goal_noise_curriculum_scale += self.goal_noise_curriculum_scale_step
+                    #self.goal_noise_curriculum_scale = torch.min(self.goal_noise_curriculum_scale, self.goal_noise_curriculum_scale_max)
 
     def _acquire_task_tensors(self):
         """Acquire tensors."""       
@@ -106,12 +122,13 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.reset_idx(env_ids)
 
         self.actions = actions.clone().to(self.device)  # shape = (num_envs, num_actions); values = [-1, 1]
-
-        self._apply_actions_as_ctrl_targets(
-            actions=self.actions,
-            ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
-            do_scale=True
-        )
+        for i in range(self.decimation):
+            if self._env._world.is_playing():
+                self._apply_actions_as_ctrl_targets(
+                    actions=self.actions,
+                    ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
+                    do_scale=True
+                )
 
     def reset_idx(self, env_ids):
         """Reset specified environments."""
@@ -212,7 +229,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         goal_noise_xy = goal_noise_xy @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.goal_noise_xy, device=self.device))
+            torch.tensor(self.cfg_task.randomize.goal_noise_xy, device=self.device)) * self.goal_noise_curriculum_scale
         
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
@@ -386,7 +403,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Normalize dist_penalty with respect to initial distance
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
         dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
-        
+        #dist_reward = torch.exp(-dist_penalty**2) - dist_penalty**2/5
+        # # we can try simply using dist_reward = 1000 - dist_penalty
+        #dist_reward = 500 - dist_penalty*500
         # Start rewarding lift in last 10 steps
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
         if is_ending:
@@ -408,7 +427,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 100 * torch.ones_like(self.rew_buf), self.rew_buf)
+            self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
             lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1
