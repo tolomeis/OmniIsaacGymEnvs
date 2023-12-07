@@ -172,7 +172,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # self.max_episode_length += episode_lenght_noise
 
 
-
     def _reset_franka(self, env_ids):
         """Reset DOF states and DOF targets of Franka."""
         indices = env_ids.to(dtype=torch.int32)
@@ -415,6 +414,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         if is_ending:
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
+            # box_success = self._check_in_box(self.cube_pos, self.goal_cube_pos, torch.tensor([0.02, 0.02, 0.02], device=self.device))
+            # self.rew_buf[:] += box_success * 500.0
 
         if (self.level <= 100.0):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(100.0-self.level)/self.max_episode_length
@@ -576,3 +577,13 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
             SimulationContext.step(self._env._world, render=True)
             
+    def _check_in_box(self, cube_pos, box_pos, box_size):
+        """Check if cube is inside box using weighted infinity norm."""
+        # Calculate absolute difference between cube and box positions
+        dist = torch.abs(cube_pos - box_pos)
+        dist = torch.max(dist - box_size, torch.zeros_like(dist))
+        dist.clamp_(min=0)
+        # Sum elements of dist along the last dimension
+        dist = dist.sum(dim=-1)
+        is_inside = torch.where(dist == 0, torch.ones_like(dist), torch.zeros_like(dist))
+        return is_inside
