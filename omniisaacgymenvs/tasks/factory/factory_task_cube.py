@@ -54,6 +54,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "pos_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "vel_saturation": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
         self.identity_quat = (
@@ -61,7 +62,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             .unsqueeze(0)
             .repeat(self.num_envs, 1)
         )
-
+        self.max_dof_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61], device=self.device)
+        self.previous_actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
 
     def post_reset(self):
         """
@@ -122,6 +124,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.reset_idx(env_ids)
 
         self.actions = actions.clone().to(self.device)  # shape = (num_envs, num_actions); values = [-1, 1]
+        self.previous_actions = self.actions.clone().to(self.device)
         for i in range(self.decimation):
             if self._env._world.is_playing():
                 self._apply_actions_as_ctrl_targets(
@@ -362,7 +365,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                         self.cube_grasp_quat,
                         rem_time,
                         d_to_goal,
-                        ep_length_tensor,]
+                        ep_length_tensor]
+                        # self.previous_actions]
 
         self.obs_buf = torch.cat(obs_tensors, dim=-1)  
 
@@ -407,32 +411,34 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # # we can try simply using dist_reward = 1000 - dist_penalty
         #dist_reward = 500 - dist_penalty*500
         # Start rewarding lift in last 10 steps
-        is_ending = (self.progress_buf[0] >= self.max_episode_length - 10)
+        is_ending = (self.progress_buf[0] >= self.max_episode_length - 20)
         if is_ending:
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
 
         if (self.level <= 100.0):
-            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0/self.max_episode_length
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(100.0-self.level)/self.max_episode_length
 
 
-        #self.rew_buf[:] += self.freezed_reward
+        self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
         track_err = torch.norm(self.ctrl_target_fingertip_midpoint_pos - self.fingertip_midpoint_pos, dim=1)
         rot_track_err = torch.norm(self.ctrl_target_fingertip_midpoint_quat - self.fingertip_midpoint_quat, dim=1)
         self.episode_sums['pos_tracking_error'] += track_err
         self.episode_sums['rot_tracking_error'] += rot_track_err
+        self.episode_sums['vel_saturation'] += \
+            torch.sum(torch.where(torch.abs(self.dof_vel[:,:7]) > self.max_dof_vel, torch.abs(self.dof_vel[:,:7]) - self.max_dof_vel, torch.zeros_like(self.max_dof_vel)), dim=1)
         
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            self.rew_buf[:] = torch.where(dist_penalty < 0.02, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
-            lift_success = self._check_lift_success(height_multiple=1.0)
+            self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            # lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
-            self.extras['cube_lifted'] = torch.mean(lift_success.float())
+            # self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level
             
 

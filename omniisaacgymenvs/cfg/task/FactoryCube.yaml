@@ -113,10 +113,10 @@ randomize:
   fingertip_midpoint_pos_noise: [0.2, 0.2, 0.0]  # noise on hand position
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
   fingertip_midpoint_rot_noise: [0.3, 0.3, 1]  # noise on rotation
-  cube_pos_xy_initial:  [0.0, 0.0] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
-  cube_pos_xy_initial_noise: [0.1, 0.1] #[0.1, 0.2]  # noise on nut position
-  goal_initial_pose:  [0.0, 0.0, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
-  goal_noise_xy: [0.25,  0.25] # noise on goal position at the beginning of training
+  cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
+  cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
+  goal_initial_pose:  [0.15, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
+  goal_noise_xy: [0.05, 0.05] #[0.25,  0.4] # noise on goal position at the beginning of training
   goal_noise_curriculum: false
   goal_noise_curriculum_scale_step: 1.0
   goal_noise_curriculum_interval: 200 # after how many episodes to step up the noise
@@ -125,25 +125,25 @@ randomize:
   ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
 rl:
-  # pos_action_scale: [0.1, 0.1, 0.1]
-  # rot_action_scale: [0.1, 0.1, 0.1]  
-  pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.005 = 0.0085
-  rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.005 = 0.0125
+  pos_action_scale: [0.1, 0.1, 0.1]
+  rot_action_scale: [0.1, 0.1, 0.1]  
+  # pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.005 = 0.0085
+  # rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.005 = 0.0125
 
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
   gripper_action_scale: [1.0, 1.0]
-  goal_scale: 1000.0     # Reward on pos at end of episode
   deltaq_action_scale: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 
   clamp_rot: True
   clamp_rot_thresh: 1.0e-6
 
+  goal_scale: 100.0     # Reward on pos at end of episode
   action_penalty_scale: 0.001  # scale on action penalty
   finger_penalty_scale: 0.0
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
   success_bonus: 100.0  # bonus if nut has been lifted
-  max_episode_length: 400 # 400*dt = 2 seconds
+  max_episode_length: 200 # 400*dt = 2 seconds
 
 ctrl:
   ctrl_type: joint_space_id  # {gym_default,
