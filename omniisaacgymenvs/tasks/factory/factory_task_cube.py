@@ -54,7 +54,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "pos_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
-            "vel_saturation": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "max_linvel": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "torque_saturated": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
         self.identity_quat = (
@@ -86,7 +87,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # randomize all envs
         indices = torch.arange(self._num_envs, dtype=torch.int64, device=self._device)
         # step curriculum every 
-        self.step_curriculum(indices)
         self.reset_idx(indices)
     
     def init_curriculum(self):
@@ -97,11 +97,10 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
     def step_curriculum(self, env_ids):
         if self.cfg_task.randomize.goal_noise_curriculum:
-            # scale every goal_noise_curriculum_interval episodesù
+            # scale every goal_noise_curriculum_interval episodes
             if self.level % self.goal_noise_curriculum_interval == 0:
                 if self.goal_noise_curriculum_scale < self.goal_noise_curriculum_scale_max:
                     self.goal_noise_curriculum_scale += self.goal_noise_curriculum_scale_step
-                    #self.goal_noise_curriculum_scale = torch.min(self.goal_noise_curriculum_scale, self.goal_noise_curriculum_scale_max)
 
     def _acquire_task_tensors(self):
         """Acquire tensors."""       
@@ -136,6 +135,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     def reset_idx(self, env_ids):
         """Reset specified environments."""
 
+        self.step_curriculum(env_ids)
+        
         self._reset_object(env_ids)
         self._reset_task()
         SimulationContext.step(self._env._world, render=True)
@@ -143,7 +144,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.refresh_env_tensors()
         self._refresh_task_tensors()
         self._reset_franka(env_ids)
-        # self._randomize_gripper_pose(env_ids, sim_steps=10)
+        self._randomize_gripper_pose(sim_steps=5)
 
         # Reset buffers and metrics
         self.extras["episode"] = {}
@@ -409,8 +410,24 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         #dist_reward = torch.exp(-dist_penalty**2) - dist_penalty**2/5
         # # we can try simply using dist_reward = 1000 - dist_penalty
         #dist_reward = 500 - dist_penalty*500
-        # Start rewarding lift in last 10 steps
+
+        # If distance is low (less than 0.25) increase reward
+        dist_reward = torch.where(dist_penalty < 0.2, dist_reward * 100.0, dist_reward)
+
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 20)
+
+        # Update maximum lin velocity
+        max_linvel = torch.norm(self.fingertip_midpoint_linvel, dim=1)
+        self.episode_sums['max_linvel'] = torch.max(max_linvel, self.episode_sums['max_linvel'])
+        
+        # max_torque = torch.max(self.dof_torque, dim=1).values
+        # max_torque = max_torque[:,0:7]
+        torque_limits = torch.tensor([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0], device=self.device) 
+        torque_saturation = torch.where(self.dof_torque[:,0:7] >= torque_limits, torch.ones_like(self.dof_torque[:,0:7]), torch.zeros_like(self.dof_torque[:,0:7]))
+        torque_saturation = torch.sum(torque_saturation, dim=1)
+        self.episode_sums['torque_saturated'] += torque_saturation / self.max_episode_length
+
+
         if is_ending:
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
@@ -419,7 +436,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         if (self.level <= 100.0):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(100.0-self.level)/self.max_episode_length
-
+            self.freezed_reward *= self.cfg_task.rl.kickstart_reward_scale
 
         self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
@@ -427,8 +444,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         rot_track_err = torch.norm(self.ctrl_target_fingertip_midpoint_quat - self.fingertip_midpoint_quat, dim=1)
         self.episode_sums['pos_tracking_error'] += track_err
         self.episode_sums['rot_tracking_error'] += rot_track_err
-        self.episode_sums['vel_saturation'] += \
-            torch.sum(torch.where(torch.abs(self.dof_vel[:,:7]) > self.max_dof_vel, torch.abs(self.dof_vel[:,:7]) - self.max_dof_vel, torch.zeros_like(self.max_dof_vel)), dim=1)
         
         # In this policy, episode length is constant across all envs
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
@@ -478,20 +493,22 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         )
         self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
 
-        # Set target rot
-        ctrl_target_fingertip_midpoint_euler = self.fingertip_midpoint_quat.clone().to(device=self.device)
+        # # Set target rot
+        # ctrl_target_fingertip_midpoint_quat = self.fingertip_midpoint_quat.clone().to(device=self.device)
 
-        fingertip_midpoint_rot_noise = \
-            2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
-        fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
-        ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
+        # ctrl_target_fingertip_midpoint_euler = torch_utils.euler_xyz_from_quat(ctrl_target_fingertip_midpoint_quat)
+        
+        # fingertip_midpoint_rot_noise = \
+        #     2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
+        # fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
+        #     torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
+        # ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
 
-        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
-            ctrl_target_fingertip_midpoint_euler[:, 0],
-            ctrl_target_fingertip_midpoint_euler[:, 1],
-            ctrl_target_fingertip_midpoint_euler[:, 2]
-        )
+        # self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
+        #     ctrl_target_fingertip_midpoint_euler[:, 0],
+        #     ctrl_target_fingertip_midpoint_euler[:, 1],
+        #     ctrl_target_fingertip_midpoint_euler[:, 2]
+        # )
 
         # Step sim and render
         for _ in range(sim_steps):
@@ -503,7 +520,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                 fingertip_midpoint_pos=self.fingertip_midpoint_pos,
                 fingertip_midpoint_quat=self.fingertip_midpoint_quat,
                 ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
-                ctrl_target_fingertip_midpoint_quat=self.ctrl_target_fingertip_midpoint_quat,
+                ctrl_target_fingertip_midpoint_quat=self.fingertip_midpoint_quat,
                 jacobian_type=self.cfg_ctrl['jacobian_type'],
                 rot_error_type='axis_angle'
             )

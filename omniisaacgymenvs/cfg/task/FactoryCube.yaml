@@ -105,22 +105,28 @@ env:
 
   close_and_lift: False  # close gripper and lift after last step of episode
 
+# domain_randomization:
+#   randomize: True
+#   rigid_prim_views:
+#     cube_view:
+
 randomize:
   #franka_arm_initial_dof_pos: [0.3413, -0.8011, -0.0670, -1.8299,  0.0266,  1.0185,  1.0927]
   franka_arm_initial_dof_pos: [0.3592, -0.3093,  0.2254, -2.3489,  0.2915,  1.9132,  1.3769]
 
   fingertip_midpoint_pos_initial: [0.0, -0.2, 0.2]  # initial position of hand above table
-  fingertip_midpoint_pos_noise: [0.2, 0.2, 0.0]  # noise on hand position
+  fingertip_midpoint_pos_noise: [0.03, 0.03, 0.01]  # noise on hand position
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
   fingertip_midpoint_rot_noise: [0.3, 0.3, 1]  # noise on rotation
   cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
   cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
-  goal_initial_pose:  [0.15, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
-  goal_noise_xy: [0.05, 0.05] #[0.25,  0.4] # noise on goal position at the beginning of training
+  goal_initial_pose:  [0.1, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
+  goal_noise_xy: [0.2, 0.9] #[0.25,  0.4] # noise on goal position at the beginning of training
+  # goal_noise_xy: [0.02, 0.1] #[0.25,  0.4] # noise on goal position at the beginning of training
   goal_noise_curriculum: false
   goal_noise_curriculum_scale_step: 1.0
   goal_noise_curriculum_interval: 200 # after how many episodes to step up the noise
-  goal_noise_curriculum_scale_max: 9.0
+  goal_noise_curriculum_scale_max: 1.0
 
   ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
@@ -139,8 +145,9 @@ rl:
   clamp_rot_thresh: 1.0e-6
 
   goal_scale: 100.0     # Reward on pos at end of episode
+  kickstart_reward_scale: 0.1
   action_penalty_scale: 0.001  # scale on action penalty
-  finger_penalty_scale: 0.0
+
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
   success_bonus: 100.0  # bonus if nut has been lifted
   max_episode_length: 200 # 400*dt = 2 seconds
@@ -171,7 +178,7 @@ ctrl:
   joint_space_id:
     ik_method: dls
     #TODO: find a decent tuning
-    joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
+    joint_prop_gains: [150, 150, 150, 80, 40, 40, 40]
     joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
