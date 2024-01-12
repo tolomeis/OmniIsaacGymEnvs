@@ -2,5 +2,7 @@ FROM nvcr.io/nvidia/isaac-sim:2023.1.0
 COPY ./ /workspace/omniisaacgymenvs/
 RUN /isaac-sim/python.sh -m pip install --upgrade pip && \
      /isaac-sim/python.sh -m pip install -e /workspace/omniisaacgymenvs
+# install git and clean up
+RUN apt-get update && apt-get install -y git && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN echo 'alias PYTHON_PATH=/isaac-sim/python.sh' >> /etc/bash.bashrc
 ENTRYPOINT ["sh", "-c", "cd /workspace/omniisaacgymenvs/omniisaacgymenvs && bash"]
