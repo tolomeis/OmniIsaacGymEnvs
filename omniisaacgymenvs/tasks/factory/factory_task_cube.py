@@ -54,8 +54,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             "cube_vel_kickstart": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "pos_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
-            "max_linvel": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "torque_saturated": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "action_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
         self.identity_quat = (
@@ -65,6 +65,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         )
         self.max_dof_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61], device=self.device)
         self.previous_actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
+        self.max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
 
     def post_reset(self):
         """
@@ -198,7 +199,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        # target_p[:,2] += 0.01
+        target_p[:,2] += 0.04
 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
@@ -315,13 +316,15 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.progress_buf[:] += 1
 
         if self._env._world.is_playing():
-
+            # Refresh data
             self.refresh_base_tensors()
             self.refresh_env_tensors()
             self._refresh_task_tensors()
+            # Compute observations and reward
             self.get_observations()
             self.get_states()
             self.calculate_metrics()
+            # Log data
             self.get_extras()
 
         return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
@@ -402,23 +405,17 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length 
-        # this is done to normalize the action penalty with respect to the episode length
-        
+        self.episode_sums['action_penalty'] -= action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length        
+
         # Normalize dist_penalty with respect to initial distance
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
-        dist_reward = (1.0 / (1.0 + dist_penalty**2))**2
-        #dist_reward = torch.exp(-dist_penalty**2) - dist_penalty**2/5
-        # # we can try simply using dist_reward = 1000 - dist_penalty
-        #dist_reward = 500 - dist_penalty*500
+        dist_reward = (1.0 / (1.0 + self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
 
-        # If distance is low (less than 0.25) increase reward
-        dist_reward = torch.where(dist_penalty < 0.2, dist_reward * 100.0, dist_reward)
 
         is_ending = (self.progress_buf[0] >= self.max_episode_length - 20)
 
         # Update maximum lin velocity
-        max_linvel = torch.norm(self.fingertip_midpoint_linvel, dim=1)
-        self.episode_sums['max_linvel'] = torch.max(max_linvel, self.episode_sums['max_linvel'])
+        self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
         
         # max_torque = torch.max(self.dof_torque, dim=1).values
         # max_torque = max_torque[:,0:7]
@@ -454,6 +451,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             #self.level += torch.mean(lift_success.float())
             self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
+            self.extras['max_linvel'] = torch.mean(self.max_linvel.float())
             # self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level
             
@@ -493,23 +491,24 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         )
         self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
 
-        # # Set target rot
-        # ctrl_target_fingertip_midpoint_quat = self.fingertip_midpoint_quat.clone().to(device=self.device)
+        # Set target rot
+        ctrl_target_fingertip_midpoint_quat = self.fingertip_midpoint_quat.clone().to(device=self.device)
 
-        # ctrl_target_fingertip_midpoint_euler = torch_utils.euler_xyz_from_quat(ctrl_target_fingertip_midpoint_quat)
+        ctrl_target_fingertip_midpoint_euler = torch_utils.get_euler_xyz(ctrl_target_fingertip_midpoint_quat)
+        # it's a tuple (roll, pitch, yaw) of torch tensor of shapes (n,1). It has to be converted to a single tensor
+        ctrl_target_fingertip_midpoint_euler = torch.stack(ctrl_target_fingertip_midpoint_euler, dim=1)
         
-        # fingertip_midpoint_rot_noise = \
-        #     2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
-        # fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
-        #     torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
-        # ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
+        fingertip_midpoint_rot_noise = \
+            2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
+        fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
+            torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
+        ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
 
-        # self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
-        #     ctrl_target_fingertip_midpoint_euler[:, 0],
-        #     ctrl_target_fingertip_midpoint_euler[:, 1],
-        #     ctrl_target_fingertip_midpoint_euler[:, 2]
-        # )
-
+        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
+            ctrl_target_fingertip_midpoint_euler[:, 0],
+            ctrl_target_fingertip_midpoint_euler[:, 1],
+            ctrl_target_fingertip_midpoint_euler[:, 2]
+        )
         # Step sim and render
         for _ in range(sim_steps):
             self.refresh_base_tensors()

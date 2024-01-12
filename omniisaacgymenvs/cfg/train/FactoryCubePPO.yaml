@@ -21,7 +21,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]  #[512,256,64] #[256, 128, 64]
+      units: [512,256,128] #[256, 128, 64]
       activation: elu
       d2rl: False
 
@@ -51,7 +51,7 @@ params:
     normalize_advantage: True
     gamma: 0.99 #5
     tau: 0.95
-    learning_rate: 1e-4 #5e-5 #1e-4
+    learning_rate: 2e-4 #5e-5 #1e-4
     lr_schedule: fixed
     schedule_type: standard
     kl_threshold: 0.016
@@ -70,4 +70,4 @@ params:
     critic_coef: 2
     clip_value: True
     seq_len: 4
-    bounds_loss_coef: 0.0001
+    bounds_loss_coef: 0.0002 #1

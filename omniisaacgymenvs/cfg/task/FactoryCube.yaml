@@ -89,6 +89,7 @@ sim:
 
 env:
   controlFrequencyInv: 1 # 2 # 60 hz
+  renderingInterval: 100
   decimation: 1 #2
   numEnvs: ${resolve_default:128,${...num_envs}}
   numObservations: 25
@@ -102,7 +103,6 @@ env:
           #               d_to_goal,                        3
           #               ep_length_tensor,]                1
   numActions: 8         # 12 for position (3), rotation (3), (2) gripper pose
-
   close_and_lift: False  # close gripper and lift after last step of episode
 
 # domain_randomization:
@@ -115,9 +115,9 @@ randomize:
   franka_arm_initial_dof_pos: [0.3592, -0.3093,  0.2254, -2.3489,  0.2915,  1.9132,  1.3769]
 
   fingertip_midpoint_pos_initial: [0.0, -0.2, 0.2]  # initial position of hand above table
-  fingertip_midpoint_pos_noise: [0.03, 0.03, 0.01]  # noise on hand position
+  fingertip_midpoint_pos_noise: [0.1, 0.1, 0.02]  # noise on hand position
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
-  fingertip_midpoint_rot_noise: [0.3, 0.3, 1]  # noise on rotation
+  fingertip_midpoint_rot_noise: [0.3, 0.3, 0.3]  # noise on rotation (euler, radians)
   cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
   cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
   goal_initial_pose:  [0.1, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
@@ -145,6 +145,7 @@ rl:
   clamp_rot_thresh: 1.0e-6
 
   goal_scale: 100.0     # Reward on pos at end of episode
+  dist_reward_width_scale: 2.0 # width of the "bell curve" of the distance reward. Higher values make it more narrow.
   kickstart_reward_scale: 0.1
   action_penalty_scale: 0.001  # scale on action penalty
 
@@ -179,7 +180,7 @@ ctrl:
     ik_method: dls
     #TODO: find a decent tuning
     joint_prop_gains: [150, 150, 150, 80, 40, 40, 40]
-    joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
+    joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
     task_prop_gains: [40, 40, 40, 40, 40, 40]
