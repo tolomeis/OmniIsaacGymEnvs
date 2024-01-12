@@ -707,12 +707,6 @@
         "/isaac-sim/kit/extscore/omni.kit.registry.nucleus",
         "/isaac-sim/kit/kernel/py",
         "/isaac-sim/kit/plugins/bindings-python",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/envs",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/robots/articulations",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/robots/articulations/views",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/tasks",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/stasks/shared",
         "utils",
         "scripts",
         "envs",
@@ -721,6 +715,7 @@
 ],
     // Those paths are automatically filled by build system, see `repo.toml` for configuration:
     "python.analysis.extraPaths": [
+        "/workspace/omniisaacgymenvs"
         "/isaac-sim/exts/omni.exporter.urdf",
         "/isaac-sim/exts/omni.exporter.urdf/pip_prebundle",
         "/isaac-sim/exts/omni.isaac.app.selector",
@@ -1410,11 +1405,7 @@
         "/isaac-sim/kit/kernel/py",
         "/isaac-sim/kit/plugins/bindings-python",
         "/workspace/omniisaacgymenvs/omniisaacgymenvs",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/envs",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/robots/articulations",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/robots/articulations/views",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/tasks",
-        "/workspace/omniisaacgymenvs/omniisaacgymenvs/stasks/shared",
+        "/workspace/omniisaacgymenvs",
         "utils",
         "scripts",
         "envs",
@@ -1435,5 +1426,7 @@
     "python.formatting.provider": "black",
     "python.formatting.blackArgs": ["--line-length", "120"],
 
-    "python.languageServer": "Pylance"
+    "python.languageServer": "Pylance",
+
+    "workbench.colorTheme": "Atom One Dark",
 }
