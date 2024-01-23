@@ -121,7 +121,7 @@ randomize:
   cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
   cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
   goal_initial_pose:  [0.1, 0.1, 0.401] #[0.2, 0.1, 0.401] # initial position of goal on table
-  goal_noise_xy: [0.2, 0.9] #[0.25,  0.4] # noise on goal position at the beginning of training
+  goal_noise_xy: [0.2, 1.4] #[0.25,  0.4] # noise on goal position at the beginning of training
   # goal_noise_xy: [0.02, 0.1] #[0.25,  0.4] # noise on goal position at the beginning of training
   goal_noise_curriculum: false
   goal_noise_curriculum_scale_step: 1.0
@@ -131,8 +131,8 @@ randomize:
   ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
 rl:
-  pos_action_scale: [0.1, 0.1, 0.1]
-  rot_action_scale: [0.1, 0.1, 0.1]  
+  pos_action_scale: [0.2, 0.2, 0.2]
+  rot_action_scale: [0.2, 0.2, 0.2]  
   # pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.005 = 0.0085
   # rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.005 = 0.0125
 
@@ -179,7 +179,7 @@ ctrl:
   joint_space_id:
     ik_method: dls
     #TODO: find a decent tuning
-    joint_prop_gains: [150, 150, 150, 80, 40, 40, 40]
+    joint_prop_gains: [250, 250, 250, 150, 80, 80, 80] #[150, 150, 150, 80, 40, 40, 40]
     joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]

@@ -249,7 +249,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self.reset_buf[env_ids] = 0
         self.progress_buf[env_ids] = 0
-    
+        self.max_linvel[env_ids] = 0.0
 
     def _apply_actions_as_ctrl_targets(self, actions, ctrl_target_gripper_dof_pos, do_scale):
         """
@@ -343,8 +343,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
 
 
-
-
     def get_observations(self):
         """Compute observations."""
         # Shallow copies of tensors
@@ -353,12 +351,12 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
         ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
 
-        # normalized_fingertip_midpoint_pos = 
+        
         # normalized_fingertip_midpoint_quat =
         # normalized_fingertip_midpoint_linvel =
         # normalized_fingertip_midpoint_angvel = 
         # normalized_cube_grasp_pos =
-        # normalized_cube_grasp_quat =
+        # normalized_cube_grasp_quat 
         
         obs_tensors = [self.fingertip_midpoint_pos,
                         self.fingertip_midpoint_quat,

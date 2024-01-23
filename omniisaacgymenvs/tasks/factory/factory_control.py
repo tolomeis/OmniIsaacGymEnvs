@@ -133,9 +133,7 @@ def compute_dof_torque(
             dof_torque[:, 0:7] = (
                 arm_mass_matrix_joint @ dof_torque[:, 0:7].unsqueeze(-1)
             ).squeeze(-1)
-        # if cfg_ctrl["use_computed_torque"]:
-        #     #  tau =  M(q)(Kp * e + Kd * e_dot) + C(q, q_dot)q_dot 
-        #     dof_torque[:, 0:7] += arm_coriolis_forces
+
             
     elif cfg_ctrl["gain_space"] == "task":
         task_wrench = torch.zeros((cfg_ctrl["num_envs"], 6), device=device)
