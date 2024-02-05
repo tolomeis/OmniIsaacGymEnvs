@@ -217,18 +217,38 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         cube_noise_xy = cube_noise_xy @ torch.diag(
             torch.tensor(self.cfg_task.randomize.cube_pos_xy_initial_noise, device=self.device))
         
+        cube_noise_rot = 2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
+        cube_noise_rot = cube_noise_rot @ torch.diag(
+            torch.tensor(self.cfg_task.randomize.cube_rot_noise, device=self.device))
+        
+        self.cube_quat[env_ids, :] = torch_utils.quat_from_euler_xyz(
+            cube_noise_rot[:, 0],
+            cube_noise_rot[:, 1],
+            cube_noise_rot[:, 2]
+        )
+        # self.cube_quat[env_ids, :]  = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
         self.cube_pos[env_ids, 0]   = self.cfg_task.randomize.cube_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
         self.cube_pos[env_ids, 1]   = self.cfg_task.randomize.cube_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
         self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
         self.cube_pos_initial = self.cube_pos.clone().to(device=self.device)
-        self.cube_quat[env_ids, :]  = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
 
         self.cube_linvel[env_ids, :] = 0.0
         self.cube_angvel[env_ids, :] = 0.0
 
+        # randomize cube scale from 0.5 to 1.5
+        cube_scale = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 1.0 + 0.5
+
+        # Randomize mass from 1g to 20g
+        # cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) * 0.019 + 0.001
+        cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) \
+                    * (self.cfg_task.randomize.cube_mass_max - self.cfg_task.randomize.cube_mass_min) \
+                    + self.cfg_task.randomize.cube_mass_min
+
+        # Set to cube view
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
-
+        #self._cube.set_local_scales(cube_scale, indices)
+        self._cube.set_masses(cube_mass, indices)
 
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
@@ -307,6 +327,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
                                      self.ctrl_target_fingertip_midpoint_quat,
                                     torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
+            
+                        
+
         self.generate_ctrl_signals()
 
 
@@ -350,7 +373,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         d_to_goal = (self.goal_cube_pos - self.cube_pos)
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
         ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
-
+        
         
         # normalized_fingertip_midpoint_quat =
         # normalized_fingertip_midpoint_linvel =
@@ -410,7 +433,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         dist_reward = (1.0 / (1.0 + self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
 
 
-        is_ending = (self.progress_buf[0] >= self.max_episode_length - 20)
+        is_ending = (self.progress_buf[0] >= self.max_episode_length - self.cfg_task.rl.ending_length)
 
         # Update maximum lin velocity
         self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
@@ -431,6 +454,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         if (self.level <= 100.0):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(100.0-self.level)/self.max_episode_length
+            # cap at a maximum of 200
+            self.freezed_reward = torch.where(self.freezed_reward > self.cfg_task.rl.kickstart_reward_max, self.cfg_task.rl.kickstart_reward_max*torch.ones_like(self.freezed_reward), self.freezed_reward)            
             self.freezed_reward *= self.cfg_task.rl.kickstart_reward_scale
 
         self.rew_buf[:] += self.freezed_reward
@@ -449,10 +474,13 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             #self.level += torch.mean(lift_success.float())
             self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
+            # log non-normalized dist penalty
+            self.extras['abs_dist'] = torch.mean(torch.norm(self.goal_cube_pos - self.cube_pos, dim=1).float())
             self.extras['max_linvel'] = torch.mean(self.max_linvel.float())
             # self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level
-            
+            # if self.test:
+            #     print("Mean final dists: ", torch.mean(dist_penalty.float()))
 
 
     def _check_lift_success(self, height_multiple):

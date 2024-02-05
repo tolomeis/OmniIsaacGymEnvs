@@ -127,8 +127,8 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
             prim_path=self.default_zero_env_path + "/cube",
             name="cube",
             color=torch.tensor([0.0, 0.5, 1.0]),
-            size=0.02,  # Cube size is 2x2x2cm
-            density=100.0,
+            size=0.02,  # Cube size is 2x2x2cm -> 0.02*0.02*0.02 = 8e-6 m^3
+            density=100.0,  # 100kg/m^3 -> 8e-6*100 = 8e-4 kg -> 0.8g
             position=cube_pos.numpy()
         )
         self._sim_config.apply_articulation_settings("cube", get_prim_at_path(cube.prim_path), self._sim_config.parse_actor_config("cube"))
@@ -146,9 +146,9 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         gripper_cyl = VisualCylinder(
             prim_path=self.default_zero_env_path + "/gripper_cyl",
             name="gripper_cyl",
-            color=torch.tensor([0.0, 1.0, 1.0]),
-            radius=0.01,
-            height=0.05
+            color=torch.tensor([0.0, 1.0, 0.0]),
+            radius=0.005,
+            height=0.03
         )
         self._sim_config.apply_articulation_settings("gripper_cyl", get_prim_at_path(gripper_cyl.prim_path), self._sim_config.parse_actor_config("gripper_cyl"))
     

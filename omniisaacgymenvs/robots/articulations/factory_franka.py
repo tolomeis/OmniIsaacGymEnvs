@@ -72,6 +72,8 @@ class FactoryFranka(Robot):
         max_force = [87, 87, 87, 87, 12, 12, 12, 200, 200]
         max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.2, 0.2]
         #max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.15, 0.15]
+        # max_force *= 5
+        # max_velocity *= 5
 
         for i, dof in enumerate(dof_paths):
             set_drive(
