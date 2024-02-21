@@ -8,7 +8,7 @@ params:
 
   network:
     name: soft_actor_critic
-    separate: False
+    separate: True
 
     space:
       continuous:
@@ -40,7 +40,7 @@ params:
     print_stats: True
     gamma: 0.996
     init_alpha: 1.0
-    alpha_lr: 0.005
+    alpha_lr: 0.001 #0.005
     actor_lr: 0.0005
     critic_lr: 0.0005
     critic_tau: 0.005

@@ -56,6 +56,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             "rot_tracking_error": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "torque_saturated": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "action_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "singularity_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
         self.identity_quat = (
@@ -66,6 +67,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.max_dof_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61], device=self.device)
         self.previous_actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
         self.max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
+        self.cube_max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
 
     def post_reset(self):
         """
@@ -108,7 +110,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Grasp pose tensors
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
-        self.goal_cube_pos = torch.tensor([0.0, 0.0, 0.401], device=self.device).repeat(self.num_envs,1)
+        self.goal_cube_pos = torch.tensor([0.0, 0.0, 301], device=self.device).repeat(self.num_envs,1)
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
 
@@ -116,7 +118,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
     def pre_physics_step(self, actions) -> None:
         """Reset environments. Apply actions from policy. Simulation step called after this method."""
 
-        if not self._env._world.is_playing():
+        if not self.world.is_playing():
             return
 
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
@@ -126,7 +128,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.actions = actions.clone().to(self.device)  # shape = (num_envs, num_actions); values = [-1, 1]
         self.previous_actions = self.actions.clone().to(self.device)
         for i in range(self.decimation):
-            if self._env._world.is_playing():
+            if self.world.is_playing():
                 self._apply_actions_as_ctrl_targets(
                     actions=self.actions,
                     ctrl_target_gripper_dof_pos=self.asset_info_franka_table.franka_gripper_width_max,
@@ -140,7 +142,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         
         self._reset_object(env_ids)
         self._reset_task()
-        SimulationContext.step(self._env._world, render=True)
+        SimulationContext.step(self.world, render=False)
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
@@ -155,9 +157,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
             self.episode_sums[key][env_ids] = 0.0
 
-        
-        # step once to update physx with the newly set joint positions from reset_franka()
-        SimulationContext.step(self._env._world, render=True)
 
         self._reset_buffers(env_ids)
     
@@ -189,7 +188,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self.frankas.set_joint_positions(self.dof_pos[env_ids], indices=indices)
         self.frankas.set_joint_velocities(self.dof_vel[env_ids], indices=indices)
-        SimulationContext.step(self._env._world, render=True)
+        SimulationContext.step(self.world, render=False)
 
         self.refresh_base_tensors()
         self.refresh_env_tensors()
@@ -199,7 +198,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.04
+        target_p[:,2] += 0.02
+        # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
@@ -230,6 +230,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.cube_pos[env_ids, 0]   = self.cfg_task.randomize.cube_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
         self.cube_pos[env_ids, 1]   = self.cfg_task.randomize.cube_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
         self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
+        # self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
+
         self.cube_pos_initial = self.cube_pos.clone().to(device=self.device)
 
         self.cube_linvel[env_ids, :] = 0.0
@@ -248,7 +250,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
         #self._cube.set_local_scales(cube_scale, indices)
-        self._cube.set_masses(cube_mass, indices)
+        # self._cube.set_masses(cube_mass, indices)
 
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
@@ -270,6 +272,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.reset_buf[env_ids] = 0
         self.progress_buf[env_ids] = 0
         self.max_linvel[env_ids] = 0.0
+        self.cube_max_linvel[env_ids] = 0.0
 
     def _apply_actions_as_ctrl_targets(self, actions, ctrl_target_gripper_dof_pos, do_scale):
         """
@@ -338,7 +341,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         self.progress_buf[:] += 1
 
-        if self._env._world.is_playing():
+        if self.world.is_playing():
             # Refresh data
             self.refresh_base_tensors()
             self.refresh_env_tensors()
@@ -422,21 +425,27 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
     def _update_rew_buf(self):
         """Compute reward at current timestep."""
-        #rem_time =  self.max_episode_length - self.progress_buf[0] 
-        
+
+        # *** ACTION PENALTY ***       
         action_penalty = torch.norm(self.actions, p=2, dim=-1) * self.cfg_task.rl.action_penalty_scale
         self.rew_buf[:] = - action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length 
         self.episode_sums['action_penalty'] -= action_penalty * self.cfg_task.rl.action_penalty_scale / self.max_episode_length        
 
+        # *** SINGULARITY PENALTY ***
+        # penalty as i get close to singularities
+        singularity_proximity = torch.linalg.cond(self.fingertip_midpoint_jacobian, 2)
+        sing_penalty = -singularity_proximity * self.cfg_task.rl.singularity_penalty_scale
+        self.rew_buf[:] += sing_penalty / self.max_episode_length
+        self.episode_sums['singularity_penalty'] += sing_penalty / self.max_episode_length
+
+        # *** DISTANCE REWARD ***
         # Normalize dist_penalty with respect to initial distance
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
         dist_reward = (1.0 / (1.0 + self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
 
-
-        is_ending = (self.progress_buf[0] >= self.max_episode_length - self.cfg_task.rl.ending_length)
-
-        # Update maximum lin velocity
+        # Update maximum lin velocity of gripper and cube
         self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
+        self.cube_max_linvel = torch.max(torch.norm(self.cube_linvel, dim=1), self.cube_max_linvel)
         
         # max_torque = torch.max(self.dof_torque, dim=1).values
         # max_torque = max_torque[:,0:7]
@@ -445,15 +454,16 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         torque_saturation = torch.sum(torque_saturation, dim=1)
         self.episode_sums['torque_saturated'] += torque_saturation / self.max_episode_length
 
-
+        # Check if episode is ending and apply sparse reward
+        is_ending = (self.progress_buf[0] >= self.max_episode_length - self.cfg_task.rl.ending_length)
         if is_ending:
             self.rew_buf[:] += dist_reward * self.cfg_task.rl.goal_scale
             self.episode_sums['dist_from_goal'] += dist_reward * self.cfg_task.rl.goal_scale 
             # box_success = self._check_in_box(self.cube_pos, self.goal_cube_pos, torch.tensor([0.02, 0.02, 0.02], device=self.device))
             # self.rew_buf[:] += box_success * 500.0
 
-        if (self.level <= 100.0):
-            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(100.0-self.level)/self.max_episode_length
+        if (self.level <= self.cfg_task.rl.kickstart_max_level):
+            self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(self.cfg_task.rl.kickstart_max_level-self.level)/self.max_episode_length
             # cap at a maximum of 200
             self.freezed_reward = torch.where(self.freezed_reward > self.cfg_task.rl.kickstart_reward_max, self.cfg_task.rl.kickstart_reward_max*torch.ones_like(self.freezed_reward), self.freezed_reward)            
             self.freezed_reward *= self.cfg_task.rl.kickstart_reward_scale
@@ -477,6 +487,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             # log non-normalized dist penalty
             self.extras['abs_dist'] = torch.mean(torch.norm(self.goal_cube_pos - self.cube_pos, dim=1).float())
             self.extras['max_linvel'] = torch.mean(self.max_linvel.float())
+            self.extras['cube_max_linvel'] = torch.mean(self.cube_max_linvel.float())
             # self.extras['cube_lifted'] = torch.mean(lift_success.float())
             self.extras['level'] = self.level
             # if self.test:
@@ -504,6 +515,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         Returns:
             None
         """
+        # print("randomizing gripper")
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
@@ -536,7 +548,8 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             ctrl_target_fingertip_midpoint_euler[:, 2]
         )
         # Step sim and render
-        for _ in range(sim_steps):
+        for i in range(sim_steps):
+            # print("randomizing gripper step ", i)
             self.refresh_base_tensors()
             self.refresh_env_tensors()
             self._refresh_task_tensors()
@@ -560,14 +573,15 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                 do_scale=False,
             )
 
-            SimulationContext.step(self._env._world, render=True)
+            SimulationContext.step(self.world, render=False)
 
         self.dof_vel[:, :] = torch.zeros_like(self.dof_vel[:])
         idx = torch.arange(self._num_envs, dtype=torch.int64, device=self._device)
         self.frankas.set_joint_velocities(self.dof_vel[:], indices=idx)
 
         # step once to update physx with the newly set joint velocities
-        SimulationContext.step(self._env._world, render=True)
+        # print("gripper randomization done")
+        SimulationContext.step(self.world, render=False)
 
 
 
@@ -617,7 +631,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             self.frankas.set_joint_position_targets(positions=ctrl_target_dof_pos)
             self.frankas.set_joint_velocities(torch.zeros_like(self.dof_pos, device=self.device))
 
-            SimulationContext.step(self._env._world, render=True)
+            SimulationContext.step(self.world, render=False)
             
     def _check_in_box(self, cube_pos, box_pos, box_size):
         """Check if cube is inside box using weighted infinity norm."""

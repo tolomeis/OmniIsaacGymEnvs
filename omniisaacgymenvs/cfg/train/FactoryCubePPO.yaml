@@ -52,9 +52,9 @@ params:
     gamma: 0.996
     tau: 0.95
     learning_rate: 2e-4 #5e-5 #1e-4
-    lr_schedule: fixed
-    schedule_type: standard
-    kl_threshold: 0.016
+    lr_schedule: adaptive
+    # schedule_type: standard
+    kl_threshold: 0.004 # 0.008     # target kl for adaptive lr
     score_to_win: 200000000
     max_epochs: ${resolve_default:500,${....max_iterations}}
     save_best_after: 50
@@ -64,8 +64,8 @@ params:
     entropy_coef: 0.0008
     truncate_grads: False
     e_clip: 0.2
-    horizon_length: 3200
-    minibatch_size: 64000
+    horizon_length: 1600 #3200
+    minibatch_size: 32000 #64000
     mini_epochs: 8
     critic_coef: 2
     clip_value: True

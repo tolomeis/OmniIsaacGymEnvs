@@ -11,7 +11,7 @@ sim:
 env:
   env_spacing: 3.0
   franka_depth: 0.5
-  table_height: 0.4
+  table_height: 0.3
   franka_friction: 1.0
   table_friction: 0.3
 

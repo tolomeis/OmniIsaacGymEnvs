@@ -1,0 +1,12 @@
+# used to create the object
+defaults:
+  - FactoryCube
+  - _self_
+
+# if given, will override the device setting in gym.
+env:
+  numEnvs: ${resolve_default:100,${...num_envs}}
+
+rl:
+  kickstart_reward_max: 200.0
+  kickstart_max_level: 300.0

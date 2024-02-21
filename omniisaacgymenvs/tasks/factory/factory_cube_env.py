@@ -51,6 +51,10 @@ from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
 from omni.isaac.core.objects import VisualSphere, VisualCylinder
 
+# from omni.kit.viewport.utility.camera_state import ViewportCameraState
+# from omni.kit.viewport.utility import get_viewport_from_window_name
+
+# import omni
 
 
 from omniisaacgymenvs.tasks.base.rl_task import RLTask
@@ -195,3 +199,17 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         #     dim=1
         # )
 
+    # def create_camera(self):
+    #     stage = omni.usd.get_context().get_stage()
+    #     self.view_port = get_viewport_from_window_name("Viewport")
+    #     # Create camera
+    #     self.camera_path = "/World/Camera"
+    #     self.perspective_path = "/OmniverseKit_Persp"
+    #     camera_prim = stage.DefinePrim(self.camera_path, "Camera")
+    #     camera_prim.GetAttribute("focalLength").Set(8.5)
+    #     coi_prop = camera_prim.GetProperty("omni:kit:centerOfInterest")
+    #     if not coi_prop or not coi_prop.IsValid():
+    #         camera_prim.CreateAttribute(
+    #             "omni:kit:centerOfInterest", Sdf.ValueTypeNames.Vector3d, True, Sdf.VariabilityUniform
+    #         ).Set(Gf.Vec3d(0, 0, -10))
+    #     self.view_port.set_active_camera(self.perspective_path)
