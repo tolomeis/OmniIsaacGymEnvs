@@ -13,12 +13,14 @@ To run this script, execute the following command from the root of the repositor
  /isaac-sim/python.sh omniisaacgymenvs/scripts/rlgames_train.py task=FactoryCube
 """
 
+
 import hydra
 import omegaconf
 import os
 import torch
 
 from omniisaacgymenvs.tasks.factory.factory_cube_env import FactoryCube
+from omniisaacgymenvs.tasks.factory.cube_ws_env import CubeWS
 from omniisaacgymenvs.tasks.factory.factory_schema_class_task import FactoryABCTask
 from omniisaacgymenvs.tasks.factory.factory_schema_config_task import FactorySchemaConfigTask
 import omniisaacgymenvs.tasks.factory.factory_control as fc
@@ -29,7 +31,7 @@ import omni.isaac.core.utils.torch as torch_utils
 
 
 
-class FactoryCubeTask(FactoryCube, FactoryABCTask):
+class CubeTask(CubeWS, FactoryABCTask):
     def __init__(self, name, sim_config, env, offset=None) -> None:
         super().__init__(name, sim_config, env)
         self._get_task_yaml_params()
@@ -109,7 +111,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Grasp pose tensors
         self.cube_grasp_pos_local = torch.tensor([0.0, 0.0, 0.01], device=self._device).repeat((self._num_envs, 1))
         self.cube_grasp_quat_local = torch.tensor([0.0, 0.0, 1.0, 0.0], device=self._device).repeat((self._num_envs, 1))
-        self.goal_cube_pos = torch.tensor([0.0, 0.0, 301], device=self.device).repeat(self.num_envs,1)
+        self.goal_cube_pos = torch.tensor([0.0, 0.0, self.cfg_base.env.table_height + 0.01 ], device=self.device).repeat(self.num_envs,1)
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
 
@@ -128,8 +130,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                                         torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
             random_force =  (torch.rand((self.num_envs,3), dtype=torch.float32, device=self.device) * 2.0 - 1.0) @ \
                             torch.diag(torch.tensor(self.cfg_task.randomize.cube_force_max, device=self.device))
-            # self._cube.apply_forces(random_force, is_cube_lifted * is_cube_grasped)
-
+            self._cube.apply_forces(random_force, is_cube_lifted * is_cube_grasped)
 
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
@@ -157,6 +158,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.refresh_env_tensors()
         self._refresh_task_tensors()
         self._reset_franka(env_ids)
+        self._replace_cube(env_ids) # sometimes franka kicks the cube
         self._randomize_gripper_pose(sim_steps=5)
 
         # Reset buffers and metrics
@@ -167,10 +169,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             )
             self.episode_sums[key][env_ids] = 0.0
 
-
         self._reset_buffers(env_ids)
     
-                      
+
     def _reset_task(self):
         """
         Resets the task by initializing the maximum episode length and randomizing it.
@@ -206,9 +207,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # Now compute dof pos to grasp the cube
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
-        # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
+        
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.04
+        target_p[:,2] += 0.02    # 0.02
         # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
         # move gripper to grasp pose with CLIK
@@ -222,10 +223,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         """Reset root states of cube."""
         indices = env_ids.to(dtype=torch.int32)
 
-        # Randomize root state of cube
-        cube_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
-        cube_noise_xy = cube_noise_xy @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.cube_pos_xy_initial_noise, device=self.device))
         
         cube_noise_rot = 2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         cube_noise_rot = cube_noise_rot @ torch.diag(
@@ -236,21 +233,28 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
             cube_noise_rot[:, 1],
             cube_noise_rot[:, 2]
         )
-        # self.cube_quat[env_ids, :]  = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float32, device=self.device).repeat(len(env_ids), 1)
-        self.cube_pos[env_ids, 0]   = self.cfg_task.randomize.cube_pos_xy_initial[0] + cube_noise_xy[env_ids, 0]
-        self.cube_pos[env_ids, 1]   = self.cfg_task.randomize.cube_pos_xy_initial[1] + cube_noise_xy[env_ids, 1]
-        self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
-        # self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
 
+
+        min_r = 0.4
+        r_w = 0.8
+        # max_r = torch.sqrt(2*r_w**2 - min_r**2)
+        max_r = 1.0583
+        
+        init_mx_r = self.cfg_task.randomize.cube_pos_initial_max_r
+        cube_init_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * \
+            (init_mx_r - min_r - 0.05) + min_r + 0.05
+        cube_init_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 1.0 - 0.5
+        cube_init_xy  = cube_init_r * torch.cat((torch.cos(cube_init_theta), torch.sin(cube_init_theta)), dim=1)
+
+        self.cube_pos[env_ids, 0]   = - cube_init_xy[env_ids,0]
+        self.cube_pos[env_ids, 1]   = cube_init_xy[env_ids,1]
+        self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
         self.cube_pos_initial = self.cube_pos.clone().to(device=self.device)
 
         self.cube_linvel[env_ids, :] = 0.0
         self.cube_angvel[env_ids, :] = 0.0
 
-        # randomize cube scale from 0.5 to 1.5
-        cube_scale = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 1.0 + 0.5
-
-        # Randomize mass from 1g to 20g
+        
         # cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) * 0.019 + 0.001
         # cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) \
         #             * (self.cfg_task.randomize.cube_mass_max - self.cfg_task.randomize.cube_mass_min) \
@@ -259,22 +263,31 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # Set to cube view
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
-        #self._cube.set_local_scales(cube_scale, indices)
+
         # self._cube.set_masses(cube_mass, indices)
-        
+          
         # Randomize goal position
-        goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
-        goal_noise_xy = goal_noise_xy @ torch.diag(
-            torch.tensor(self.cfg_task.randomize.goal_noise_xy, device=self.device)) * self.goal_noise_curriculum_scale
-        
-        self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
-        self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
-        self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
-        
+        goal_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * (max_r - min_r) + min_r
+        goal_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) *  1.0 - 0.5
+        goal_noise_xy = goal_r * torch.cat((torch.cos(goal_theta), torch.sin(goal_theta)), dim=1)        
+        self.goal_cube_pos[env_ids, 0] = - goal_noise_xy[env_ids, 0]
+        self.goal_cube_pos[env_ids, 1] =  goal_noise_xy[env_ids, 1]
+    
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
-        # if self.test:
+        
+        # set sphere color to green where goal_r is less than r_w
+        # red = torch.tensor([1.0, 0.0, 1.0], device=self.device).repeat((self.num_envs, 1))
+        # green = torch.tensor([0.0, 1.0, 0.0], device=self.device).repeat((self.num_envs, 1))
+        # sphere_color = torch.where(goal_r < r_w, green, red)
+        # self.sphere_material
+        
         self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
+    def _replace_cube(self, env_ids):
+        indices = env_ids.to(dtype=torch.int32)
+        self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
+        self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
+
 
 
     def _reset_buffers(self, env_ids):
@@ -397,7 +410,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         # normalized_cube_grasp_quat 
         
         obs_tensors = [ #franka_dof_pos,
-                        #franka_dof_vel,
+                        # franka_dof_vel,
                         self.fingertip_midpoint_pos,
                         self.fingertip_midpoint_quat,
                         self.fingertip_midpoint_linvel,

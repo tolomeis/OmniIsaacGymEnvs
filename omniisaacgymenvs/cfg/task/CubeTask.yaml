@@ -3,7 +3,7 @@
 defaults:
     - _self_
 
-name: FactoryCube
+name: CubeTask
 physics_engine: ${..physics_engine}
 
 sim:
@@ -119,7 +119,8 @@ randomize:
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
   fingertip_midpoint_rot_noise: [0.3, 0.3, 0.3]  # noise on rotation (euler, radians)
   
-  cube_pos_xy_initial:  [0.15, -0.1] #[0.2, -0.1] #[0.20, -0.2]  # initial XY position of cube on table
+  cube_pos_initial_max_r: 0.5  # initial max distance from center
+
   cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
   cube_rot_noise: [0.0, 0.0, 0.0]   # noise on rotation (euler, radians)
   cube_mass_min: 0.0002    # kg

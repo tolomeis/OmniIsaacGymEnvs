@@ -33,6 +33,8 @@ def initialize_demo(config, env, init_sim=True):
     # Mappings from strings to environments
     task_map = {
         "AnymalTerrain": AnymalTerrainDemo,
+        "FrankaPlay":FrankaPlayDemo,
+        "FrankaPolicyDemo":FrankaPolicyDemo,
     }
 
     from omniisaacgymenvs.utils.config_utils.sim_config import SimConfig

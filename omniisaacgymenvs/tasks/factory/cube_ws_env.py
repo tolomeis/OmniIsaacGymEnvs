@@ -40,7 +40,9 @@ import torch
 
 from omniisaacgymenvs.tasks.factory.factory_schema_class_env import FactoryABCEnv
 from omniisaacgymenvs.tasks.factory.factory_schema_config_env import FactorySchemaConfigEnv
-from omniisaacgymenvs.tasks.factory.factory_base import FactoryBase
+from omniisaacgymenvs.tasks.factory.cube_ws_base import CubeBase
+from omni.isaac.core.materials import PreviewSurface
+
 import omniisaacgymenvs.tasks.factory.factory_control as fc
 
 from omni.isaac.core.utils.stage import add_reference_to_stage
@@ -50,8 +52,6 @@ from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim, XFormPrim
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
 from omni.isaac.core.objects import VisualSphere, VisualCylinder
-from omni.isaac.core.objects import GroundPlane
-
 
 # from omni.kit.viewport.utility.camera_state import ViewportCameraState
 # from omni.kit.viewport.utility import get_viewport_from_window_name
@@ -68,7 +68,7 @@ from omni.physx.scripts import utils, physicsUtils
 
 
 
-class FactoryCube(FactoryBase, FactoryABCEnv):
+class CubeWS(CubeBase, FactoryABCEnv):
     def __init__(self, name, sim_config, env, offset=None) -> None:
         self._get_env_yaml_params()
 
@@ -93,6 +93,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
     def set_up_scene(self, scene) -> None:
         self.import_franka_assets()
         self.get_cube()
+        self.get_sphere()
         # self.get_box()
 
         RLTask.set_up_scene(self, scene, replicate_physics=False)
@@ -104,7 +105,6 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         # self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
         #                            name="box_view", 
         #                            reset_xform_properties=False)
-        plane = GroundPlane(prim_path="/World/GroundPlane", z_position=0)
         
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
@@ -115,15 +115,20 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         scales = torch.arange(1.0, 3.0, 2.0 / self._num_envs).to(self._device)
         # has to be (num_envs, 3)
         scales = torch.stack([scales, scales, scales], dim=1)
-        print(scales.shape)
-        # self._cube.set_local_scales(scales)
+        self._cube.set_local_scales(scales)
         scene.add(self._cube)
         # scene.add(self._box)
         
-        self.get_sphere()
         self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
         scene.add(self._sphere)
 
+        # self.sphere_material = PreviewSurface(
+        #     prim_path = '/World/envs/.*/sphere_material',
+        #     name = 'sphere_material',
+        #     color = torch.tensor([1.0, 0.0, 0.0]),
+        # )
+        # self._sphere.apply_visual_materials(self.sphere_material)
+        
         if self._cfg["test"]:
             self.get_gripper_cyl()
             self._gripper_cyl = XFormPrimView(prim_paths_expr="/World/envs/.*/gripper_cyl", name="gripper_cyl_view")
@@ -142,7 +147,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
             name="cube",
             color=torch.tensor([0.0, 0.5, 1.0]),
             size=0.02,  # Cube size is 2x2x2cm -> 0.02*0.02*0.02 = 8e-6 m^3
-            density=100.0,  # 1000kg/m^3 -> 8g
+            density=500.0,  # 1000kg/m^3 -> 8g
             position=cube_pos.numpy()
         )
         self._sim_config.apply_articulation_settings("cube", get_prim_at_path(cube.prim_path), self._sim_config.parse_actor_config("cube"))

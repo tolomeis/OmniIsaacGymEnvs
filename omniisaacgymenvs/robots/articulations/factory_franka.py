@@ -31,17 +31,17 @@ class FactoryFranka(Robot):
     ) -> None:
         """[summary]"""
 
-        self._usd_path = usd_path
+        self._usd_path = "/home/darko/isaac-ws/OmniIsaacGymEnvs/assets/Collected_factory_franka/factory_franka.usd"
         self._name = name
 
         self._position = torch.tensor([1.0, 0.0, 0.0]) if translation is None else translation
         self._orientation = torch.tensor([0.0, 0.0, 0.0, 1.0]) if orientation is None else orientation
         
-        if self._usd_path is None:
-            assets_root_path = get_assets_root_path()
-            if assets_root_path is None:
-                carb.log_error("Could not find Isaac Sim assets folder")
-            self._usd_path = assets_root_path + "/Isaac/Robots/FactoryFranka/factory_franka.usd"
+        # if self._usd_path is None:
+        #     assets_root_path = get_assets_root_path()
+        #     if assets_root_path is None:
+        #         carb.log_error("Could not find Isaac Sim assets folder")
+        #     self._usd_path = assets_root_path + "/Isaac/Robots/FactoryFranka/factory_franka.usd"
 
         add_reference_to_stage(self._usd_path, prim_path)
 
