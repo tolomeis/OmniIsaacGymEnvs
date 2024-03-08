@@ -12,7 +12,7 @@ sim:
   gravity: [0.0, 0.0, -9.81]  # required, but overridden in base FactoryBase.yaml
   gravity_mag: 9.81
   disable_gravity: False
-  add_ground_plane: False
+  add_ground_plane: True
   add_distant_light: False
   use_flatcache: True
   enable_scene_query_support: True
@@ -92,7 +92,7 @@ env:
   renderingInterval: 100
   decimation: 1 #2
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 25 # 25
+  numObservations: 25
           # obs_tensors = [self.fingertip_midpoint_pos,     3
           #               self.fingertip_midpoint_quat,     4
           #               self.fingertip_midpoint_linvel,   3
@@ -124,7 +124,6 @@ randomize:
   cube_rot_noise: [0.0, 0.0, 0.0]   # noise on rotation (euler, radians)
   cube_mass_min: 0.0002    # kg
   cube_mass_max: 0.000205     # kg  
-  cube_force_max: [0.001, 0.001, 0.001] # [0.02,0.02,0.025]
 
   goal_initial_pose:  [0.1, 0.0, 0.301]  # initial position of goal on table
   goal_noise_xy: [0.18, 1.3]       # noise on goal position at the beginning of training
@@ -163,7 +162,7 @@ rl:
   max_episode_length: 400 # 400*dt = 2 seconds
 
 ctrl:
-  ctrl_type: joint_space_id #joint_space_id  # {gym_default,
+  ctrl_type: joint_space_id  # {gym_default,
                               #  joint_space_ik, joint_space_id, 
                               #  task_space_impedance, operational_space_motion, 
                               #  open_loop_force, closed_loop_force,
@@ -177,18 +176,17 @@ ctrl:
     gripper_deriv_gains: [2, 2]
   gym_default:
     ik_method: dls
-    joint_prop_gains: [250, 250, 250, 150, 80, 80, 80] 
-    joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
+    joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
+    joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
     gripper_prop_gains: [500, 500]
     gripper_deriv_gains: [20, 20]
-    # joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
-    # joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
   joint_space_ik:
     ik_method: dls
     joint_prop_gains: [1, 1, 1, 1, 1, 1, 1]
     joint_deriv_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   joint_space_id:
     ik_method: dls
+    #TODO: find a decent tuning
     joint_prop_gains: [250, 250, 250, 150, 80, 80, 80] #[150, 150, 150, 80, 40, 40, 40]
     joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
   task_space_impedance:

@@ -78,29 +78,6 @@ class CubeVideo(CubeTask):
         self.view_port.set_active_camera(self.perspective_path)
 
 
-    def update_selected_object(self):
-        self._previous_selected_id = self._selected_id
-        selected_prim_paths = self._prim_selection.get_selected_prim_paths()
-        if len(selected_prim_paths) == 0:
-            self._selected_id = None
-            self.view_port.set_active_camera(self.perspective_path)
-        elif len(selected_prim_paths) > 1:
-            print("Multiple prims are selected. Please only select one!")
-        else:
-            prim_splitted_path = selected_prim_paths[0].split("/")
-            if len(prim_splitted_path) >= 4 and prim_splitted_path[3][0:4] == "env_":
-                self._selected_id = int(prim_splitted_path[3][4:])
-                if self._previous_selected_id != self._selected_id:
-                    self.view_port.set_active_camera(self.camera_path)
-                self._update_camera()
-            else:
-                print("The selected prim was not an Anymal")
-        
-        if self._previous_selected_id is not None and self._previous_selected_id != self._selected_id:
-            self.commands[self._previous_selected_id, 0] = np.random.uniform(self.command_x_range[0], self.command_x_range[1])
-            self.commands[self._previous_selected_id, 1] = np.random.uniform(self.command_y_range[0], self.command_y_range[1])
-            self.commands[self._previous_selected_id, 2] = 0.0
-    
     def _update_camera(self):
         base_pos = self.base_pos[self._selected_id, :].clone()
         base_quat = self.base_quat[self._selected_id, :].clone()

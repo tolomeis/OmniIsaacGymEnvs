@@ -13,6 +13,7 @@ To run this script, execute the following command from the root of the repositor
  /isaac-sim/python.sh omniisaacgymenvs/scripts/rlgames_train.py task=FactoryCube
 """
 
+
 import hydra
 import omegaconf
 import os
@@ -120,17 +121,6 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         if not self.world.is_playing():
             return
 
-        # Every 5 steps apply a force to the cube
-        if self.progress_buf[0] % 10 == 0:
-            is_cube_lifted = torch.where(self.cube_pos[:, 2] > self.cfg_base.env.table_height + 0.02,\
-                                      torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
-            is_cube_grasped = torch.where(torch.norm(self.cube_pos - self.fingertip_midpoint_pos, dim=1) < 0.02,\
-                                        torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
-            random_force =  (torch.rand((self.num_envs,3), dtype=torch.float32, device=self.device) * 2.0 - 1.0) @ \
-                            torch.diag(torch.tensor(self.cfg_task.randomize.cube_force_max, device=self.device))
-            # self._cube.apply_forces(random_force, is_cube_lifted * is_cube_grasped)
-
-
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
@@ -208,7 +198,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         # gripper_initial_grasp_quat = self.identity_quat.clone().to(device=self.device)
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.04
+        target_p[:,2] += 0.02
         # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
         # move gripper to grasp pose with CLIK
@@ -252,16 +242,16 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
 
         # Randomize mass from 1g to 20g
         # cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) * 0.019 + 0.001
-        # cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) \
-        #             * (self.cfg_task.randomize.cube_mass_max - self.cfg_task.randomize.cube_mass_min) \
-        #             + self.cfg_task.randomize.cube_mass_min
+        cube_mass = torch.rand((self.num_envs), dtype=torch.float32, device=self.device) \
+                    * (self.cfg_task.randomize.cube_mass_max - self.cfg_task.randomize.cube_mass_min) \
+                    + self.cfg_task.randomize.cube_mass_min
 
         # Set to cube view
         self._cube.set_world_poses(self.cube_pos[env_ids] + self.env_pos[env_ids], self.cube_quat[env_ids], indices)
         self._cube.set_velocities(torch.cat((self.cube_linvel[env_ids], self.cube_angvel[env_ids]), dim=1), indices)
         #self._cube.set_local_scales(cube_scale, indices)
         # self._cube.set_masses(cube_mass, indices)
-        
+
         # Randomize goal position
         goal_noise_xy = 2 * (torch.rand((self.num_envs, 2), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         goal_noise_xy = goal_noise_xy @ torch.diag(
@@ -270,10 +260,9 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         self.goal_cube_pos = torch.tensor(self.cfg_task.randomize.goal_initial_pose, device=self.device).repeat(self.num_envs,1)
         self.goal_cube_pos[env_ids, 0] += goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] +=  goal_noise_xy[env_ids, 1]
-        
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
-        # if self.test:
-        self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
+        if self.test:
+            self._sphere.set_world_poses(self.goal_cube_pos[env_ids] + self.env_pos[env_ids], self.cube_grasp_quat_local[env_ids], indices)
       
 
 
@@ -388,17 +377,14 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
         ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
         
-        franka_dof_pos = self.dof_pos[:, 0:7]
-        franka_dof_vel = self.dof_vel[:, 0:7]
+        
         # normalized_fingertip_midpoint_quat =
         # normalized_fingertip_midpoint_linvel =
         # normalized_fingertip_midpoint_angvel = 
         # normalized_cube_grasp_pos =
         # normalized_cube_grasp_quat 
         
-        obs_tensors = [ #franka_dof_pos,
-                        #franka_dof_vel,
-                        self.fingertip_midpoint_pos,
+        obs_tensors = [self.fingertip_midpoint_pos,
                         self.fingertip_midpoint_quat,
                         self.fingertip_midpoint_linvel,
                         self.fingertip_midpoint_angvel,
@@ -407,8 +393,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
                         rem_time,
                         d_to_goal,
                         ep_length_tensor]
-
-    
+                        # self.previous_actions]
 
         self.obs_buf = torch.cat(obs_tensors, dim=-1)  
 
@@ -494,7 +479,7 @@ class FactoryCubeTask(FactoryCube, FactoryABCTask):
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            self.rew_buf[:] = torch.where(dist_penalty < 0.04, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
             # lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1

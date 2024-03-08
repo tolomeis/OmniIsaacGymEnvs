@@ -18,6 +18,7 @@ import hydra
 import omegaconf
 import os
 import torch
+import numpy as np
 
 from omniisaacgymenvs.tasks.factory.factory_cube_env import FactoryCube
 from omniisaacgymenvs.tasks.factory.cube_ws_env import CubeWS
@@ -28,7 +29,6 @@ import omniisaacgymenvs.tasks.factory.factory_control as fc
 from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils.torch.transformations import *
 import omni.isaac.core.utils.torch as torch_utils
-
 
 
 class CubeTask(CubeWS, FactoryABCTask):
@@ -115,6 +115,12 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
 
+        self.min_r = self.cfg_task.randomize.cube_pos_min_r
+        r_w = 0.9 # workspace radius
+        #ensure that half of the goals are inside the workspace and half outside
+        self.max_r = np.sqrt(2*r_w**2 - self.min_r**2) 
+        print("max_r: ", self.max_r)
+
     
     def pre_physics_step(self, actions) -> None:
         """Reset environments. Apply actions from policy. Simulation step called after this method."""
@@ -158,7 +164,10 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.refresh_env_tensors()
         self._refresh_task_tensors()
         self._reset_franka(env_ids)
-        self._replace_cube(env_ids) # sometimes franka kicks the cube
+        self._replace_cube(env_ids)
+        self.refresh_base_tensors()
+        self.refresh_env_tensors()
+        self._refresh_task_tensors()
         self._randomize_gripper_pose(sim_steps=5)
 
         # Reset buffers and metrics
@@ -209,14 +218,14 @@ class CubeTask(CubeWS, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.02    # 0.02
+        target_p[:,2] += 0.05    # 0.02
         # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
-        self.refresh_base_tensors()
-        self.refresh_env_tensors()
-        self._refresh_task_tensors()
+        # self.refresh_base_tensors()
+        # self.refresh_env_tensors()
+        # self._refresh_task_tensors()
 
 
     def _reset_object(self, env_ids):
@@ -235,15 +244,14 @@ class CubeTask(CubeWS, FactoryABCTask):
         )
 
 
-        min_r = 0.4
-        r_w = 0.8
-        # max_r = torch.sqrt(2*r_w**2 - min_r**2)
-        max_r = 1.0583
+
         
         init_mx_r = self.cfg_task.randomize.cube_pos_initial_max_r
+        #randomize reeeeeeaaally close to the center. We want only to make the policy robust
         cube_init_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * \
-            (init_mx_r - min_r - 0.05) + min_r + 0.05
-        cube_init_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 1.0 - 0.5
+            (init_mx_r - 0.98*init_mx_r) + init_mx_r*0.98
+        cube_init_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 0.1 - 0.05
+
         cube_init_xy  = cube_init_r * torch.cat((torch.cos(cube_init_theta), torch.sin(cube_init_theta)), dim=1)
 
         self.cube_pos[env_ids, 0]   = - cube_init_xy[env_ids,0]
@@ -267,7 +275,8 @@ class CubeTask(CubeWS, FactoryABCTask):
         # self._cube.set_masses(cube_mass, indices)
           
         # Randomize goal position
-        goal_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * (max_r - min_r) + min_r
+        goal_min_r = self.min_r * 1.2
+        goal_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * (self.max_r - goal_min_r) + goal_min_r
         goal_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) *  1.0 - 0.5
         goal_noise_xy = goal_r * torch.cat((torch.cos(goal_theta), torch.sin(goal_theta)), dim=1)        
         self.goal_cube_pos[env_ids, 0] = - goal_noise_xy[env_ids, 0]
@@ -507,7 +516,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            self.rew_buf[:] = torch.where(dist_penalty < 0.04, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
             # lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1
@@ -544,9 +553,6 @@ class CubeTask(CubeWS, FactoryABCTask):
             None
         """
         # print("randomizing gripper")
-        self.refresh_base_tensors()
-        self.refresh_env_tensors()
-        self._refresh_task_tensors()
         # Set target pos above table
         self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos.clone().to(device=self.device)
 

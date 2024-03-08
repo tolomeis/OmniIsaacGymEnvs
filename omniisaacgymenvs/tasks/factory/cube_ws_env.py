@@ -112,7 +112,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
         scene.add(self.frankas._rfingers)
         scene.add(self.frankas._fingertip_centered)
         # Scale every cube of a factor from 1 to 4
-        scales = torch.arange(1.0, 3.0, 2.0 / self._num_envs).to(self._device)
+        scales = torch.arange(1.0, self.cfg_base.env.cube_max_scale, (self.cfg_base.env.cube_max_scale - 1.0 )/ self._num_envs).to(self._device)
         # has to be (num_envs, 3)
         scales = torch.stack([scales, scales, scales], dim=1)
         self._cube.set_local_scales(scales)

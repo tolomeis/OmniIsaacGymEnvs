@@ -50,8 +50,6 @@ from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim, XFormPrim
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
 from omni.isaac.core.objects import VisualSphere, VisualCylinder
-from omni.isaac.core.objects import GroundPlane
-
 
 # from omni.kit.viewport.utility.camera_state import ViewportCameraState
 # from omni.kit.viewport.utility import get_viewport_from_window_name
@@ -104,29 +102,21 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
         # self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
         #                            name="box_view", 
         #                            reset_xform_properties=False)
-        plane = GroundPlane(prim_path="/World/GroundPlane", z_position=0)
         
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
         scene.add(self.frankas._lfingers)
         scene.add(self.frankas._rfingers)
         scene.add(self.frankas._fingertip_centered)
-        # Scale every cube of a factor from 1 to 4
-        scales = torch.arange(1.0, 3.0, 2.0 / self._num_envs).to(self._device)
-        # has to be (num_envs, 3)
-        scales = torch.stack([scales, scales, scales], dim=1)
-        print(scales.shape)
-        # self._cube.set_local_scales(scales)
         scene.add(self._cube)
         # scene.add(self._box)
         
-        self.get_sphere()
-        self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
-        scene.add(self._sphere)
-
         if self._cfg["test"]:
             self.get_gripper_cyl()
+            self.get_sphere()
+            self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
             self._gripper_cyl = XFormPrimView(prim_paths_expr="/World/envs/.*/gripper_cyl", name="gripper_cyl_view")
+            scene.add(self._sphere)
             scene.add(self._gripper_cyl)
         
         self.cube_inward_axis = torch.tensor([0, 0, -1], device=self._device, dtype=torch.float).repeat((self._num_envs, 1))
@@ -142,7 +132,7 @@ class FactoryCube(FactoryBase, FactoryABCEnv):
             name="cube",
             color=torch.tensor([0.0, 0.5, 1.0]),
             size=0.02,  # Cube size is 2x2x2cm -> 0.02*0.02*0.02 = 8e-6 m^3
-            density=100.0,  # 1000kg/m^3 -> 8g
+            density=100.0,  # 100kg/m^3 -> 8e-6*100 = 8e-4 kg -> 0.8g
             position=cube_pos.numpy()
         )
         self._sim_config.apply_articulation_settings("cube", get_prim_at_path(cube.prim_path), self._sim_config.parse_actor_config("cube"))
