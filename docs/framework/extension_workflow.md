@@ -15,14 +15,14 @@ The extension workflow uses the multi-threaded VecEnv base environment for runni
 
 A quick video overview of the extension workflow is available below.
 
-[![](https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/assets/6352136/59ec740a-9629-41ea-aad3-6532935be5fd)](https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/assets/6352136/cc6732f6-5a60-44f3-8c08-acf41e22a998)
+[![](https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/assets/6352136/59ec740a-9629-41ea-aad3-6532935be5fd)](https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/assets/6352136/cc6732f6-5a60-44f3-8c08-acf41e22a998)
 
-[Link to video.](https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/assets/6352136/cc6732f6-5a60-44f3-8c08-acf41e22a998)
+[Link to video.](https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/assets/6352136/cc6732f6-5a60-44f3-8c08-acf41e22a998)
 
 
 ### Launching Isaac Sim
 
-To use the extension workflow, an Isaac Sim app instance must be launched first. A dedicated kit app file is provided for the purpose of the extension workflow. However, the path to the OmniIsaacGymEnvs repo must be provided as a command line argument in order for the Isaac Sim app to find the OIGE extension. This path should be the **parent** directory of where the OIGE extension is cloned at. For example, if OIGE is cloned to `/home/user/OmniIsaacGymEnvs`, then the required argument will be `--ext-folder /home/user`.
+To use the extension workflow, an Isaac Sim app instance must be launched first. A dedicated kit app file is provided for the purpose of the extension workflow. However, the path to the omniisaacgymenvst repo must be provided as a command line argument in order for the Isaac Sim app to find the OIGE extension. This path should be the **parent** directory of where the OIGE extension is cloned at. For example, if OIGE is cloned to `/home/user/omniisaacgymenvst`, then the required argument will be `--ext-folder /home/user`.
 
 Below is an example command for launching Isaac Sim:
 
@@ -42,7 +42,7 @@ For IsaacSim Docker: /isaac-sim
 
 Once the Isaac Sim app is launched, the OIGE extension UI can be opened from the top menu bar by navigating to `Isaac Examples > RL Examples`. The below UI window should appear.
 
-<img src="https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/assets/6352136/1460f070-9245-46f6-a8ed-5bb86168f543"/>
+<img src="https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/assets/6352136/1460f070-9245-46f6-a8ed-5bb86168f543"/>
 
 Under the `World Control` section of the UI, the `Select Task` dropdown contains a list of tasks that are currently supported. Additional tasks can be added to this list by registering the task in `task_util.py`. 
 

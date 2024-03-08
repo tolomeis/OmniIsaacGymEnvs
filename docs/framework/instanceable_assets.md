@@ -34,12 +34,12 @@ To add the instanced asset into a new stage, we will simply need to add the mast
 ### Converting Existing Assets
 
 We provide the utility function `convert_asset_instanceable`, which creates an instanceable 
-version of a given USD asset in `/omniisaacgymenvs/utils/usd_utils/create_instanceable_assets.py`. 
+version of a given USD asset in `/omniisaacgymenvst/utils/usd_utils/create_instanceable_assets.py`. 
 To run this function, launch Isaac Sim and open the script editor via `Window -> Script Editor`.
 Enter the following script and press `Run (Ctrl + Enter)`:
 
 ```bash
-from omniisaacgymenvs.utils.usd_utils.create_instanceable_assets import convert_asset_instanceable
+from omniisaacgymenvst.utils.usd_utils.create_instanceable_assets import convert_asset_instanceable
 convert_asset_instanceable(
     asset_usd_path=ASSET_USD_PATH, 
     source_prim_path=SOURCE_PRIM_PATH, 
@@ -68,7 +68,7 @@ to set these USD Relationships on the meshes' parent Xforms instead of the meshe
 In a case where we would like to update the main USD file where the instanceable USD file is being referenced from, we also provide a utility method to update all references in the stage that matches a source reference path to a new USD file path.
 
 ```bash
-from omniisaacgymenvs.utils.usd_utils.create_instanceable_assets import update_reference
+from omniisaacgymenvst.utils.usd_utils.create_instanceable_assets import update_reference
 update_reference(
     source_prim_path=SOURCE_PRIM_PATH, 
     source_reference_path=SOURCE_REFERENCE_PATH,
@@ -104,10 +104,10 @@ would have to be modified to:
 
 Any references that exist on the original `Sphere` and `Box` prims would have to be moved to `Sphere_Xform` and `Box_Xform` prims.
 
-To help with the process of creating new parent prims, we provide a utility method `create_parent_xforms()` in `omniisaacgymenvs/utils/usd_utils/create_instanceable_assets.py` to automatically insert a new Xform prim as a parent of every mesh prim in the stage. This method can be run on an existing non-instanced USD file for an asset from the script editor:
+To help with the process of creating new parent prims, we provide a utility method `create_parent_xforms()` in `omniisaacgymenvst/utils/usd_utils/create_instanceable_assets.py` to automatically insert a new Xform prim as a parent of every mesh prim in the stage. This method can be run on an existing non-instanced USD file for an asset from the script editor:
 
 ```bash
-from omniisaacgymenvs.utils.usd_utils.create_instanceable_assets import create_parent_xforms
+from omniisaacgymenvst.utils.usd_utils.create_instanceable_assets import create_parent_xforms
 create_parent_xforms(
     asset_usd_path=ASSET_USD_PATH, 
     source_prim_path=SOURCE_PRIM_PATH, 

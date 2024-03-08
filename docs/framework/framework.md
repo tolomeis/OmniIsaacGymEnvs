@@ -38,7 +38,7 @@ Commonly used APIs provided by the base wrapper class `VecEnvBase` include:
 
 `VecEnvBase` is a simple interface that’s designed to provide commonly used `gym.Env` APIs required by RL libraries. Users can create an instance of this class, attach your task to the interface, and provide your wrapper instance to the RL policy. Since the RL algorithm maintains the main loop of execution, interaction with the UI and environments in the scene can be limited and may interfere with the training loop.
 
-We also provide another environment wrapper class called `VecEnvMT`, which is designed to isolate the RL policy in a new thread, separate from the main simulation and rendering thread. This class provides the same set of interface as `VecEnvBase`, but also provides threaded queues for sending and receiving actions and states between the RL policy and the task. In order to use this wrapper interface, users have to implement a `TrainerMT` class, which should implement a `run()` method that initiates the RL loop on a new thread. We show an example of this in OmniIsaacGymEnvs under `omniisaacgymenvs/utils/rlgames/rlgames_train_mt.py`. The setup for using `VecEnvMT` is more involved compared to the single-threaded `VecEnvBase` interface, but will allow users to have more control over starting and stopping the training loop through interaction with the UI.
+We also provide another environment wrapper class called `VecEnvMT`, which is designed to isolate the RL policy in a new thread, separate from the main simulation and rendering thread. This class provides the same set of interface as `VecEnvBase`, but also provides threaded queues for sending and receiving actions and states between the RL policy and the task. In order to use this wrapper interface, users have to implement a `TrainerMT` class, which should implement a `run()` method that initiates the RL loop on a new thread. We show an example of this in omniisaacgymenvst under `omniisaacgymenvst/utils/rlgames/rlgames_train_mt.py`. The setup for using `VecEnvMT` is more involved compared to the single-threaded `VecEnvBase` interface, but will allow users to have more control over starting and stopping the training loop through interaction with the UI.
 
 Note that `VecEnvMT` has a timeout variable, which defaults to 90 seconds. If either the RL thread waiting for physics state exceeds the timeout amount or the simulation thread waiting for RL actions exceeds the timeout amount, the threaded queues will throw an exception and terminate training. For larger scenes that require longer simulation or training time, try increasing the timeout variable in `VecEnvMT` to prevent unnecessary timeouts. This can be done by passing in a `timeout` argument when calling `VecEnvMT.initialize()`.
 
@@ -80,7 +80,7 @@ class MyNewTask(RLTask):
 
 The `__init__` method should take 4 arguments: 
 * `name`: a string for the name of the task (required by BaseTask)
-* `sim_config`: an instance of `SimConfig` used for config parsing, can be `None`. This object is created in `omniisaacgymenvs/utils/task_utils.py`.
+* `sim_config`: an instance of `SimConfig` used for config parsing, can be `None`. This object is created in `omniisaacgymenvst/utils/task_utils.py`.
 * `env`: an instance of `VecEnvBase` or an inherited class of `VecEnvBase`
 * `offset`: any offset required to place the `Task` in `World` (required by `BaseTask`)
 
@@ -119,9 +119,9 @@ def is_done(self) -> None:
 
 ```
 
-To launch the new example from one of our training scripts, add `MyNewTask` to `omniisaacgymenvs/utils/task_util.py`. In `initialize_task()`, add an import to the `MyNewTask` class and add an instance to the `task_map` dictionary to register it into the command line parsing. 
+To launch the new example from one of our training scripts, add `MyNewTask` to `omniisaacgymenvst/utils/task_util.py`. In `initialize_task()`, add an import to the `MyNewTask` class and add an instance to the `task_map` dictionary to register it into the command line parsing. 
 
-To use the Hydra config parsing system, also add a task and train config files into `omniisaacgymenvs/cfg`. The config files should be named `cfg/task/MyNewTask.yaml` and `cfg/train/MyNewTaskPPO.yaml`.
+To use the Hydra config parsing system, also add a task and train config files into `omniisaacgymenvst/cfg`. The config files should be named `cfg/task/MyNewTask.yaml` and `cfg/train/MyNewTaskPPO.yaml`.
 
 Finally, we can launch `MyNewTask` with:
 
@@ -131,9 +131,9 @@ PYTHON_PATH random_policy.py task=MyNewTask
 
 ### Using a New RL Library
 
-In this repository, we provide an example of extending Isaac Sim's environment wrapper classes to work with the rl_games library, which can be found at `omniisaacgymenvs/envs/vec_env_rlgames.py` and `omniisaacgymenvs/envs/vec_env_rlgames_mt.py`.
+In this repository, we provide an example of extending Isaac Sim's environment wrapper classes to work with the rl_games library, which can be found at `omniisaacgymenvst/envs/vec_env_rlgames.py` and `omniisaacgymenvst/envs/vec_env_rlgames_mt.py`.
 
-The first script, `omniisaacgymenvs/envs/vec_env_rlgames.py`, extends from `VecEnvBase`.
+The first script, `omniisaacgymenvst/envs/vec_env_rlgames.py`, extends from `VecEnvBase`.
 
 ```python
 from omni.isaac.gym.vec_env import VecEnvBase
@@ -175,7 +175,7 @@ def step(self, actions):
     return obs_dict, self._rew, self._resets, self._extras
 ```
 
-Similarly, we also have a multi-threaded version of the rl_games environment wrapper implementation, `omniisaacgymenvs/envs/vec_env_rlgames_mt.py`. This class extends from `VecEnvMT` and `VecEnvRLGames`:
+Similarly, we also have a multi-threaded version of the rl_games environment wrapper implementation, `omniisaacgymenvst/envs/vec_env_rlgames_mt.py`. This class extends from `VecEnvMT` and `VecEnvRLGames`:
 
 ```python
 from omni.isaac.gym.vec_env import VecEnvMT

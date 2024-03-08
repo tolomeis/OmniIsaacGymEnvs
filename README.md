@@ -28,12 +28,12 @@ Follow the Isaac Sim [documentation](https://docs.omniverse.nvidia.com/isaacsim/
 
 *Examples in this repository rely on features from the most recent Isaac Sim release. Please make sure to update any existing Isaac Sim build to the latest release version, 2023.1.1, to ensure examples work as expected.*
 
-Once installed, this repository can be used as a python module, `omniisaacgymenvs`, with the python executable provided in Isaac Sim.
+Once installed, this repository can be used as a python module, `omniisaacgymenvst`, with the python executable provided in Isaac Sim.
 
-To install `omniisaacgymenvs`, first clone this repository:
+To install `omniisaacgymenvst`, first clone this repository:
 
 ```bash
-git clone https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs.git
+git clone https://github.com/NVIDIA-Omniverse/omniisaacgymenvst.git
 ```
 
 Once cloned, locate the [python executable in Isaac Sim](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_python.html). By default, this should be `python.sh`. We will refer to this path as `PYTHON_PATH`.
@@ -46,7 +46,7 @@ For Windows: doskey PYTHON_PATH=C:\Users\user\AppData\Local\ov\pkg\isaac_sim-*\p
 For IsaacSim Docker: alias PYTHON_PATH=/isaac-sim/python.sh
 ```
 
-Install `omniisaacgymenvs` as a python module for `PYTHON_PATH`:
+Install `omniisaacgymenvst` as a python module for `PYTHON_PATH`:
 
 ```bash
 PYTHON_PATH -m pip install -e .
@@ -61,7 +61,7 @@ ERROR: pip's dependency resolver does not currently take into account all the pa
 
 ### Running the examples
 
-*Note: All commands should be executed from `OmniIsaacGymEnvs/omniisaacgymenvs`.*
+*Note: All commands should be executed from `omniisaacgymenvst/omniisaacgymenvst`.*
 
 To train your first policy, run:
 
@@ -120,22 +120,22 @@ Note that if there are special characters such as `[` or `=` in the checkpoint n
 you will need to escape them and put quotes around the string. For example,
 `checkpoint="runs/Ant/nn/last_Antep\=501rew\[5981.31\].pth"`
 
-We provide pre-trained checkpoints on the [Nucleus](https://docs.omniverse.nvidia.com/nucleus/latest/index.html) server under `Assets/Isaac/2023.1.1/Isaac/Samples/OmniIsaacGymEnvs/Checkpoints`. Run the following command
+We provide pre-trained checkpoints on the [Nucleus](https://docs.omniverse.nvidia.com/nucleus/latest/index.html) server under `Assets/Isaac/2023.1.1/Isaac/Samples/omniisaacgymenvst/Checkpoints`. Run the following command
 to launch inference with pre-trained checkpoint:
 
 Localhost (To set up localhost, please refer to the [Isaac Sim installation guide](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_workstation.html)):
 
 ```bash
-PYTHON_PATH scripts/rlgames_train.py task=Ant checkpoint=omniverse://localhost/NVIDIA/Assets/Isaac/2023.1.1/Isaac/Samples/OmniIsaacGymEnvs/Checkpoints/ant.pth test=True num_envs=64
+PYTHON_PATH scripts/rlgames_train.py task=Ant checkpoint=omniverse://localhost/NVIDIA/Assets/Isaac/2023.1.1/Isaac/Samples/omniisaacgymenvst/Checkpoints/ant.pth test=True num_envs=64
 ```
 
 Production server:
 
 ```bash
-PYTHON_PATH scripts/rlgames_train.py task=Ant checkpoint=http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/2023.1.1/Isaac/Samples/OmniIsaacGymEnvs/Checkpoints/ant.pth test=True num_envs=64
+PYTHON_PATH scripts/rlgames_train.py task=Ant checkpoint=http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/2023.1.1/Isaac/Samples/omniisaacgymenvst/Checkpoints/ant.pth test=True num_envs=64
 ```
 
-When running with a pre-trained checkpoint for the first time, we will automatically download the checkpoint file to `omniisaacgymenvs/checkpoints`. For subsequent runs, we will re-use the file that has already been downloaded, and will not overwrite existing checkpoints with the same name in the `checkpoints` folder.
+When running with a pre-trained checkpoint for the first time, we will automatically download the checkpoint file to `omniisaacgymenvst/checkpoints`. For subsequent runs, we will re-use the file that has already been downloaded, and will not overwrite existing checkpoints with the same name in the `checkpoints` folder.
 
 ## Runing from Docker
 
@@ -187,7 +187,7 @@ Cloud instances for AWS, Azure, or GCP can be setup using [IsaacSim Automator](h
 
 ## Livestream
 
-OmniIsaacGymEnvs supports livestream through the [Omniverse Streaming Client](https://docs.omniverse.nvidia.com/app_streaming-client/app_streaming-client/overview.html). To enable this feature, add the commandline argument `enable_livestream=True`:
+omniisaacgymenvst supports livestream through the [Omniverse Streaming Client](https://docs.omniverse.nvidia.com/app_streaming-client/app_streaming-client/overview.html). To enable this feature, add the commandline argument `enable_livestream=True`:
 
 ```bash
 PYTHON_PATH scripts/rlgames_train.py task=Ant headless=True enable_livestream=True
@@ -198,7 +198,7 @@ Connect from the Omniverse Streaming Client once the SimulationApp has been crea
 
 ## Training Scripts
 
-All scripts provided in `omniisaacgymenvs/scripts` can be launched directly with `PYTHON_PATH`.
+All scripts provided in `omniisaacgymenvst/scripts` can be launched directly with `PYTHON_PATH`.
 
 To test out a task without RL in the loop, run the random policy script with:
 
@@ -224,7 +224,7 @@ We use [Hydra](https://hydra.cc/docs/intro/) to manage the config.
  
 Common arguments for the training scripts are:
 
-* `task=TASK` - Selects which task to use. Any of `AllegroHand`, `Ant`, `Anymal`, `AnymalTerrain`, `BallBalance`, `Cartpole`, `CartpoleCamera`, `Crazyflie`, `FactoryTaskNutBoltPick`, `FactoryTaskNutBoltPlace`, `FactoryTaskNutBoltScrew`, `FrankaCabinet`, `FrankaDeformable`, `Humanoid`, `Ingenuity`, `Quadcopter`, `ShadowHand`, `ShadowHandOpenAI_FF`, `ShadowHandOpenAI_LSTM` (these correspond to the config for each environment in the folder `omniisaacgymenvs/cfg/task`)
+* `task=TASK` - Selects which task to use. Any of `AllegroHand`, `Ant`, `Anymal`, `AnymalTerrain`, `BallBalance`, `Cartpole`, `CartpoleCamera`, `Crazyflie`, `FactoryTaskNutBoltPick`, `FactoryTaskNutBoltPlace`, `FactoryTaskNutBoltScrew`, `FrankaCabinet`, `FrankaDeformable`, `Humanoid`, `Ingenuity`, `Quadcopter`, `ShadowHand`, `ShadowHandOpenAI_FF`, `ShadowHandOpenAI_LSTM` (these correspond to the config for each environment in the folder `omniisaacgymenvst/cfg/task`)
 * `train=TRAIN` - Selects which training config to use. Will automatically default to the correct config for the environment (ie. `<TASK>PPO`).
 * `num_envs=NUM_ENVS` - Selects the number of environments to use (overriding the default number of environments set in the task config).
 * `seed=SEED` - Sets a seed value for randomization, and overrides the default seed in the task config
@@ -246,11 +246,11 @@ Hydra also allows setting variables inside config files directly as command line
 
 #### Hydra Notes
 
-Default values for each of these are found in the `omniisaacgymenvs/cfg/config.yaml` file.
+Default values for each of these are found in the `omniisaacgymenvst/cfg/config.yaml` file.
 
 The way that the `task` and `train` portions of the config works are through the use of config groups. 
 You can learn more about how these work [here](https://hydra.cc/docs/tutorials/structured_config/config_groups/)
-The actual configs for `task` are in `omniisaacgymenvs/cfg/task/<TASK>.yaml` and for `train` in `omniisaacgymenvs/cfg/train/<TASK>PPO.yaml`. 
+The actual configs for `task` are in `omniisaacgymenvst/cfg/task/<TASK>.yaml` and for `train` in `omniisaacgymenvst/cfg/train/<TASK>PPO.yaml`. 
 
 In some places in the config you will find other variables referenced (for example,
  `num_actors: ${....task.env.numEnvs}`). Each `.` represents going one level up in the config hierarchy.
@@ -265,7 +265,7 @@ PYTHON_PATH -m tensorboard.main --logdir runs/EXPERIMENT_NAME/summaries
 
 ## WandB support
 
-You can run (WandB)[https://wandb.ai/] with OmniIsaacGymEnvs by setting `wandb_activate=True` flag from the command line. You can set the group, name, entity, and project for the run by setting the `wandb_group`, `wandb_name`, `wandb_entity` and `wandb_project` arguments. Make sure you have WandB installed in the Isaac Sim Python executable with `PYTHON_PATH -m pip install wandb` before activating.
+You can run (WandB)[https://wandb.ai/] with omniisaacgymenvst by setting `wandb_activate=True` flag from the command line. You can set the group, name, entity, and project for the run by setting the `wandb_group`, `wandb_name`, `wandb_entity` and `wandb_project` arguments. Make sure you have WandB installed in the Isaac Sim Python executable with `PYTHON_PATH -m pip install wandb` before activating.
 
 
 ## Training with Multiple GPUs
@@ -294,7 +294,7 @@ For more details on multi-node training with PyTorch, please visit [here](https:
 
 ## Tasks
 
-Source code for tasks can be found in `omniisaacgymenvs/tasks`. 
+Source code for tasks can be found in `omniisaacgymenvst/tasks`. 
 
 Each task follows the frameworks provided in `omni.isaac.core` and `omni.isaac.gym` in Isaac Sim.
 
@@ -320,7 +320,7 @@ the ANYmals in the scene to go into third-person mode and manually control the r
 Launch this demo with the following command. Note that this demo limits the maximum number of ANYmals in the scene to 128.
 
 ```
-PYTHON_PATH scripts/rlgames_demo.py task=AnymalTerrain num_envs=64 checkpoint=omniverse://localhost/NVIDIA/Assets/Isaac/2023.1.1/Isaac/Samples/OmniIsaacGymEnvs/Checkpoints/anymal_terrain.pth 
+PYTHON_PATH scripts/rlgames_demo.py task=AnymalTerrain num_envs=64 checkpoint=omniverse://localhost/NVIDIA/Assets/Isaac/2023.1.1/Isaac/Samples/omniisaacgymenvst/Checkpoints/anymal_terrain.pth 
 ```
 
 <img src="https://user-images.githubusercontent.com/34286328/184688654-6e7899b2-5847-4184-8944-2a96b129b1ff.gif" width="600" height="300"/>

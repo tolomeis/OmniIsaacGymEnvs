@@ -50,7 +50,7 @@ INSTALL_REQUIRES = [
 
 # Installation operation
 setup(
-    name="omniisaacgymenvs",
+    name="omniisaacgymenvst",
     author="NVIDIA",
     version="2023.1.1",
     description="RL environments for robot learning in NVIDIA Isaac Sim.",

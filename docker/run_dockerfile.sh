@@ -8,5 +8,5 @@ docker run --name isaac-sim-oige-container -it --gpus all -e "ACCEPT_EULA=Y" --n
 -v ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw \
 -v ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw \
 -v ~/docker/isaac-sim/documents:/root/Documents:rw \
--v $(pwd):/workspace/omniisaacgymenvs:rw \
+-v $(pwd):/workspace/omniisaacgymenvst:rw \
 isaac-sim-oige

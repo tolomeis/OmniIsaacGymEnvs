@@ -41,7 +41,7 @@ PhysX error: the application need to increase the PxgDynamicsMemoryConfig::found
 
 #### RL Training
 * rl-games requires `minibatch_size` defined in the training config to be a factor of `horizon_length * num_envs`. If this is not the case, you may see an assertion error `assert(self.batch_size % self.minibatch_size == 0)`. Please adjust the parameters in the training config `yaml` file accordingly.
-* In the train configuration `yaml` file (*e.g.* [HumanoidPPO.yaml](../omniisaacgymenvs/cfg/train/HumanoidPPO.yaml)), setting the parameter `mixed_precision` to
+* In the train configuration `yaml` file (*e.g.* [HumanoidPPO.yaml](../omniisaacgymenvst/cfg/train/HumanoidPPO.yaml)), setting the parameter `mixed_precision` to
 `True` should only be used with gpu pipeline. It is recommended to set `mixed_precision` to `False` when using cpu pipeline to prevent crashes.
 * If running with the multi-threaded environment wrapper class `VecEnvMT`, you may see a timeout error that looks something like `Getting states: timeout occurred.`. If you hit this error with your environment, try increasing the timeout variable in `VecEnvMT`, which can be passed as a parameter on the `initialize()` call. It may also be easier to debug an environment using the single-threaded class first to iron out any bugs.
 
@@ -49,5 +49,5 @@ PhysX error: the application need to increase the PxgDynamicsMemoryConfig::found
 ### Known Issues
 * Terminating a training or inferencing process launched from python with ctrl-c may result in a segmentation fault error if multiple ctrl-c events occurred. To prevent the error, please use a single ctrl-c command to terminate the process.
 * SAC examples are currently broken due to a bug in rl-games v1.6.1. If you would like to run SAC, please use the latest master branch of rl-games: https://github.com/Denys88/rl_games.
-* OmniIsaacGymEnvs versions 2022.2.1 and prior will no longer work with Isaac Sim version 2023.1.0 and later. For best compatibility, please update OmniIsaacGymEnvs to the same version as Isaac Sim.
+* omniisaacgymenvst versions 2022.2.1 and prior will no longer work with Isaac Sim version 2023.1.0 and later. For best compatibility, please update omniisaacgymenvst to the same version as Isaac Sim.
 * The following warning may appear at the beginning of training when loading assets from Nucleus: `[Warning] [omni.client.python] Detected a blocking function. This will cause hitches or hangs in the UI. Please switch to the async version`. The warning can be safely ignored.

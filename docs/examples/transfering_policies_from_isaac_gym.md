@@ -162,7 +162,7 @@ In Isaac Gym Preview Releases, GPU buffer sizes are specified using the followin
 `default_buffer_size_multiplier` and `max_gpu_contact_pairs`. With the Isaac Sim RL extensions,
 these two parameters are no longer used; instead, the various GPU buffer sizes can be 
 set explicitly. 
-For instance, in the [Humanoid task configuration file](../omniisaacgymenvs/cfg/task/Humanoid.yaml),
+For instance, in the [Humanoid task configuration file](../omniisaacgymenvst/cfg/task/Humanoid.yaml),
 GPU buffer sizes are specified as follows:
 
 ```yaml
@@ -204,9 +204,9 @@ task configuration `yaml` file. The following is an example template for setting
 ```
 
 These articulation parameters can be parsed using the `parse_actor_config` method in the 
-[SimConfig](../omniisaacgymenvs/utils/config_utils/sim_config.py) class, which can then be applied
+[SimConfig](../omniisaacgymenvst/utils/config_utils/sim_config.py) class, which can then be applied
 to a prim in simulation via the `apply_articulation_settings` method. A concrete example of this
-is the following code snippet from the [HumanoidTask](../omniisaacgymenvs/tasks/humanoid.py#L75):
+is the following code snippet from the [HumanoidTask](../omniisaacgymenvst/tasks/humanoid.py#L75):
 
 ```python
 self._sim_config.apply_articulation_settings("Humanoid", get_prim_at_path(humanoid.prim_path), self._sim_config.parse_actor_config("Humanoid"))
@@ -226,7 +226,7 @@ The Omniverse Isaac Gym RL Environments are trained using a third-party highly-o
 in [IsaacGymEnvs](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs). Therefore, the rl_games training 
 configuration `yaml` files in Isaac Sim are compatible with those from IsaacGymEnvs. However, please
 add the following lines under `config` in the training configuration `yaml` files (*i.e.* 
-line 41-42 in [HumanoidPPO.yaml](../omniisaacgymenvs/cfg/train/HumanoidPPO.yaml#L41)) to ensure
+line 41-42 in [HumanoidPPO.yaml](../omniisaacgymenvst/cfg/train/HumanoidPPO.yaml#L41)) to ensure
 RL training runs on the intended device.
 
 ```yaml

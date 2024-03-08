@@ -14,7 +14,7 @@ Additions
 
 Changes
 -------
-- Use rl_device for sampling random policy (https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/pull/51)
+- Use rl_device for sampling random policy (https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/pull/51)
 - Add FPS printouts for random policy
 - Use absolute path for default checkpoint folder for consistency between Python and extension workflows
 - Change camera creation API in CartpoleCamera to use USD APIs instead of `rep.create`
@@ -22,7 +22,7 @@ Changes
 Fixes
 -----
 - Fix missing device in warp kernel launch for Ant and Humanoid
-- Fix typo for velocity iteration (https://github.com/NVIDIA-Omniverse/OmniIsaacGymEnvs/pull/111)
+- Fix typo for velocity iteration (https://github.com/NVIDIA-Omniverse/omniisaacgymenvst/pull/111)
 - Clean up private variable access in task classes in favour of property getters
 - Clean up private variable access in extension.py in favour of setter methods
 - Unregister replicator in extension workflow on training completion to allow for restart
@@ -34,7 +34,7 @@ Fixes
 Changes
 -------
 - Update docker scripts to Isaac Sim docker image 2023.1.0-hotfix.1
-- Use omniisaacgymenvs module root for app file parsing
+- Use omniisaacgymenvst module root for app file parsing
 - Update FrankaDeformable physics dt for better training stability
 
 Fixes
