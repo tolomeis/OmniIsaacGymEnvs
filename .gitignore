@@ -1,8 +1,11 @@
 __pycache___
 __pycache__/
 runs
+old_runs
 omniisaacgymenvst.egg-info/
 checkpoints
 omniisaacgymenvst/wandb
 *.etli
 omniisaacgymenvst/videos/*
+toloenv
+*.npz
