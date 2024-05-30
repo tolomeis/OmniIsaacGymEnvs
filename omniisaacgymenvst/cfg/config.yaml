@@ -50,13 +50,13 @@ mt_timeout: 90
 # enables viewport recording 
 enable_recording: False
 # interval between video recordings (in steps)
-recording_interval: 16000     # 100*1600 = 16000 steps   
+recording_interval: 400     # 1
 # length of the recorded video (in steps)
-recording_length: 1600        # 4 seconds at 400 steps per second
+recording_length: 1600        #4 seconds at 200 steps per second
 # fps for writing recorded video
 recording_fps: 25
 # directory to save recordings in
-recording_dir: '/home/darko/isaac-ws/omniisaacgymenvst/omniisaacgymenvst/videos'
+recording_dir: '/home/darko/isaac-ws/OmniIsaacGymEnvs/omniisaacgymenvst/videos'
 
 wandb_activate: False
 wandb_group: ''

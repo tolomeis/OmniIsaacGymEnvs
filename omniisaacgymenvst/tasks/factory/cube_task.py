@@ -30,11 +30,26 @@ from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils.torch.transformations import *
 import omni.isaac.core.utils.torch as torch_utils
 
+# FOR VIDEO REC:
+#from omni.kit.viewport.utility.camera_state import ViewportCameraState
+#from omni.kit.viewport.utility import get_viewport_from_window_name
+#from pxr import Sdf
 
 class CubeTask(CubeWS, FactoryABCTask):
     def __init__(self, name, sim_config, env, offset=None) -> None:
         super().__init__(name, sim_config, env)
         self._get_task_yaml_params()
+        self.identity_quat = (
+            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+            .unsqueeze(0)
+            .repeat(self.num_envs, 1)
+        )
+        self.max_dof_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61], device=self.device)
+        self.previous_actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
+        self.max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
+        self.cube_max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
+        
+        
     
     def _get_task_yaml_params(self):
         """Initialize instance variables from YAML files."""
@@ -58,17 +73,10 @@ class CubeTask(CubeWS, FactoryABCTask):
             "torque_saturated": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "action_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "singularity_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "force_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
-        self.identity_quat = (
-            torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
-            .unsqueeze(0)
-            .repeat(self.num_envs, 1)
-        )
-        self.max_dof_vel = torch.tensor([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61], device=self.device)
-        self.previous_actions = torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device)
-        self.max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
-        self.cube_max_linvel = torch.zeros((self.num_envs, 1), device=self.device)   
+
 
     def post_reset(self):
         """
@@ -78,7 +86,9 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         if self.cfg_task.sim.disable_gravity:
             self.disable_gravity()
-
+        # if self._cfg.enable_recording: 
+        #     self._update_camera()
+            
         # super().post_reset()
         self.acquire_base_tensors()
         self._acquire_task_tensors()
@@ -114,9 +124,14 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.goal_cube_pos = torch.tensor([0.0, 0.0, self.cfg_base.env.table_height + 0.01 ], device=self.device).repeat(self.num_envs,1)
         self.cube_pos_initial = torch.tensor([0.0, 0.0, 0.0,], device=self.device).repeat(self.num_envs,1)
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
+        
+        # if self._task_cfg["env"]["use_goal_zone"]:
+        #     self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1) - \
+        #         self._task_cfg["env"]["goal_zone_radius"]
+        #     self.initial_dist = torch.where(self.initial_dist < 0.0, torch.zeros_like(self.initial_dist), self.initial_dist)
 
         self.min_r = self.cfg_task.randomize.cube_pos_min_r
-        r_w = 0.9 # workspace radius
+        r_w = 0.9 + 0.2 # workspace radius
         #ensure that half of the goals are inside the workspace and half outside
         self.max_r = np.sqrt(2*r_w**2 - self.min_r**2) 
         print("max_r: ", self.max_r)
@@ -128,7 +143,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         if not self.world.is_playing():
             return
 
-        # Every 5 steps apply a force to the cube
+        # Every 10 steps apply a force to the cube
         if self.progress_buf[0] % 10 == 0:
             is_cube_lifted = torch.where(self.cube_pos[:, 2] > self.cfg_base.env.table_height + 0.02,\
                                       torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
@@ -168,7 +183,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.refresh_base_tensors()
         self.refresh_env_tensors()
         self._refresh_task_tensors()
-        self._randomize_gripper_pose(sim_steps=5)
+        self._randomize_gripper_pose(sim_steps=5)  #10 for cube30, otherwise 5
 
         # Reset buffers and metrics
         self.extras["episode"] = {}
@@ -218,7 +233,8 @@ class CubeTask(CubeWS, FactoryABCTask):
         gripper_initial_grasp_quat = self.cube_grasp_quat[env_ids,:].clone().to(device=self.device)
         
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
-        target_p[:,2] += 0.05    # 0.02
+        #target_p[:,2] += 0.04  #5    # 0.02
+        target_p[:,2] += 0.01  #5    # 0.02
         # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
         # move gripper to grasp pose with CLIK
@@ -275,15 +291,30 @@ class CubeTask(CubeWS, FactoryABCTask):
         # self._cube.set_masses(cube_mass, indices)
           
         # Randomize goal position
-        goal_min_r = self.min_r * 1.2
+        # goal_min_r = self.min_r * 1.2
+
+        goal_min_r = self.cfg_task.randomize.goal_min_r
+
+        r_w = 0.9 + 0.2# workspace radius
+
+        if self.cfg_base.env.spawn_obstacle:
+            goal_min_r = 0.9
+        
         goal_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * (self.max_r - goal_min_r) + goal_min_r
+        # goal_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * (r_w - goal_min_r) + goal_min_r
+        # goal_r = self.max_r*torch.ones((self.num_envs, 1), dtype=torch.float32, device=self.device)*1.2
         goal_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) *  1.0 - 0.5
         goal_noise_xy = goal_r * torch.cat((torch.cos(goal_theta), torch.sin(goal_theta)), dim=1)        
         self.goal_cube_pos[env_ids, 0] = - goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] =  goal_noise_xy[env_ids, 1]
     
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
-        
+        # if self._task_cfg["env"]["use_goal_zone"]:
+        #     self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1) - \
+        #         self._task_cfg["env"]["goal_zone_radius"]
+        #     self.initial_dist = torch.where(self.initial_dist < 0.0, torch.zeros_like(self.initial_dist), self.initial_dist)
+        # # print(self.initial_dist)
+
         # set sphere color to green where goal_r is less than r_w
         # red = torch.tensor([1.0, 0.0, 1.0], device=self.device).repeat((self.num_envs, 1))
         # green = torch.tensor([0.0, 1.0, 0.0], device=self.device).repeat((self.num_envs, 1))
@@ -319,7 +350,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         Returns:
             None
         """
-
+        #actions *= 0.0
         # Interpret actions as target pos displacements and set pos target
         pos_actions = actions[:, 0:3]
         if do_scale:
@@ -346,23 +377,21 @@ class CubeTask(CubeWS, FactoryABCTask):
 
 
         if self.cfg_task.ctrl.control_gripper:
-            # Retrieve gripper DOF from actions and apply:
-            gripper_actions = actions[:,6:]
-            if do_scale:
-                gripper_actions = gripper_actions @ torch.diag(
-                    torch.tensor(self.cfg_task.rl.gripper_action_scale, device=self.device))
 
-            self.ctrl_target_gripper_dof_pos = gripper_actions
-        
+
+            gripper_closure = actions[:,6]
+            if do_scale:
+                gripper_closure = gripper_closure * self.cfg_task.rl.gripper_action_scale
+            self.ctrl_target_gripper_dof_pos = torch.cat((gripper_closure.unsqueeze(1), gripper_closure.unsqueeze(1)), dim=1)
         ## USED TUNING CT GAINS:
         # dir = (self.goal_cube_pos + self.cube_grasp_pos ) / 2.0
         # self.ctrl_target_fingertip_midpoint_pos = dir
         # self.ctrl_target_fingertip_midpoint_quat = self.cube_grasp_quat.clone().to(device=self.device)
 
-        if self.test:
-            self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
-                                     self.ctrl_target_fingertip_midpoint_quat,
-                                    torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
+        # if self.test:
+        #     self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
+        #                              self.ctrl_target_fingertip_midpoint_quat,
+        #                             torch.arange(self._num_envs, dtype=torch.int64, device=self._device))
             
                         
 
@@ -386,6 +415,8 @@ class CubeTask(CubeWS, FactoryABCTask):
             # Log data
             self.get_extras()
 
+        self.last_actions[:] = self.actions[:]
+        
         return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
 
     def _refresh_task_tensors(self):
@@ -407,11 +438,18 @@ class CubeTask(CubeWS, FactoryABCTask):
         # Shallow copies of tensors
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
         d_to_goal = (self.goal_cube_pos - self.cube_pos)
-        d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
+        # if self._task_cfg["env"]["use_goal_zone"]:
+        #     # this shuld be actually the distance vector from a circle of radius self._task_cfg["env"]["goal_zone_radius"]
+        #     normalized_d_to_goal = d_to_goal / torch.norm(d_to_goal, dim=1).unsqueeze(1)
+        #     reduced_d_to_goal = d_to_goal - self._task_cfg["env"]["goal_zone_radius"] * normalized_d_to_goal
+        #     d_to_goal = torch.where(torch.norm(d_to_goal, dim=1).unsqueeze(1) < self._task_cfg["env"]["goal_zone_radius"],
+        #                             torch.zeros_like(d_to_goal), reduced_d_to_goal)
+
+        # d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
         ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
         
-        franka_dof_pos = self.dof_pos[:, 0:7]
-        franka_dof_vel = self.dof_vel[:, 0:7]
+        # franka_dof_pos = self.dof_pos[:, 0:7]
+        # franka_dof_vel = self.dof_vel[:, 0:7]
         # normalized_fingertip_midpoint_quat =
         # normalized_fingertip_midpoint_linvel =
         # normalized_fingertip_midpoint_angvel = 
@@ -424,11 +462,13 @@ class CubeTask(CubeWS, FactoryABCTask):
                         self.fingertip_midpoint_quat,
                         self.fingertip_midpoint_linvel,
                         self.fingertip_midpoint_angvel,
-                        self.cube_grasp_pos,
-                        self.cube_grasp_quat,
+                        self.cube_pos, # self.cube_grasp_pos,
+                        # self.cube_grasp_quat,
                         rem_time,
                         d_to_goal,
-                        ep_length_tensor]
+                        ep_length_tensor, 
+                        self.previous_actions]
+                        #self.last_actions]
 
     
 
@@ -478,12 +518,23 @@ class CubeTask(CubeWS, FactoryABCTask):
         # *** DISTANCE REWARD ***
         # Normalize dist_penalty with respect to initial distance
         dist_penalty = torch.norm(self.goal_cube_pos - self.cube_pos,dim=1) / self.initial_dist
+        # if self._task_cfg["env"]["use_goal_zone"]:
+        #     dist_penalty -= self._task_cfg["env"]["goal_zone_radius"] / self.initial_dist
+        #     dist_penalty = torch.where(dist_penalty < 0.0, torch.zeros_like(dist_penalty), dist_penalty)
+
         dist_reward = (1.0 / (1.0 + self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
 
         # Update maximum lin velocity of gripper and cube
         self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
         self.cube_max_linvel = torch.max(torch.norm(self.cube_linvel, dim=1), self.cube_max_linvel)
-        
+
+        # Penalty on finger forces
+        forces = self.left_finger_force + self.right_finger_force
+        forces = forces[:,2]
+        force_penalty = - forces * self.cfg_task.rl.force_penalty_scale
+        self.rew_buf[:] += force_penalty / self.max_episode_length
+        self.episode_sums['force_penalty'] += force_penalty / self.max_episode_length
+
         # max_torque = torch.max(self.dof_torque, dim=1).values
         # max_torque = max_torque[:,0:7]
         torque_limits = torch.tensor([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0], device=self.device) 
@@ -516,13 +567,21 @@ class CubeTask(CubeWS, FactoryABCTask):
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            if self._task_cfg["env"]["use_goal_zone"]:
+                self.rew_buf[:] = torch.where(dist_penalty <= self._task_cfg["env"]["goal_zone_radius"], self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            else:
+                self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
             # lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
             # log non-normalized dist penalty
             self.extras['abs_dist'] = torch.mean(torch.norm(self.goal_cube_pos - self.cube_pos, dim=1).float())
+            if self._task_cfg["env"]["use_goal_zone"]:
+                self.extras['abs_dist'] -= self._task_cfg["env"]["goal_zone_radius"]
+                if self.extras['abs_dist'] < 0.0:
+                    self.extras['abs_dist'] = torch.tensor([0.0], device=self.device)
+
             self.extras['max_linvel'] = torch.mean(self.max_linvel.float())
             self.extras['cube_max_linvel'] = torch.mean(self.cube_max_linvel.float())
             # self.extras['cube_lifted'] = torch.mean(lift_success.float())
@@ -561,6 +620,8 @@ class CubeTask(CubeWS, FactoryABCTask):
             torch.tensor(self.cfg_task.randomize.fingertip_midpoint_pos_noise,
             device=self.device)
         )
+        # set z of all envs from 0 to 1
+        fingertip_midpoint_pos_noise[:, 2] = torch.abs(fingertip_midpoint_pos_noise[:, 2])
         self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
 
         # Set target rot
@@ -587,7 +648,6 @@ class CubeTask(CubeWS, FactoryABCTask):
             self.refresh_base_tensors()
             self.refresh_env_tensors()
             self._refresh_task_tensors()
-
             pos_error, axis_angle_error = fc.get_pose_error(
                 fingertip_midpoint_pos=self.fingertip_midpoint_pos,
                 fingertip_midpoint_quat=self.fingertip_midpoint_quat,
@@ -677,3 +737,32 @@ class CubeTask(CubeWS, FactoryABCTask):
         dist = dist.sum(dim=-1)
         is_inside = torch.where(dist == 0, torch.ones_like(dist), torch.zeros_like(dist))
         return is_inside
+    
+    def create_camera(self):
+        stage = omni.usd.get_context().get_stage()
+        self.view_port = get_viewport_from_window_name("Viewport")
+        # Create camera
+        self.camera_path = "/World/Camera"
+        self.perspective_path = "/OmniverseKit_Persp"
+        camera_prim = stage.DefinePrim(self.camera_path, "Camera")
+        camera_prim.GetAttribute("focalLength").Set(8.5)
+        coi_prop = camera_prim.GetProperty("omni:kit:centerOfInterest")
+        if not coi_prop or not coi_prop.IsValid():
+            camera_prim.CreateAttribute(
+                "omni:kit:centerOfInterest", Sdf.ValueTypeNames.Vector3d, True, Sdf.VariabilityUniform
+            ).Set(Gf.Vec3d(0, 0, -10))
+        self.view_port.set_active_camera(self.perspective_path)
+
+
+    def _update_camera(self):
+        base_pos = self.base_pos[self._selected_id, :].clone()
+        base_quat = self.base_quat[self._selected_id, :].clone()
+
+        camera_local_transform = torch.tensor([-1.8, 0.0, 0.6], device=self.device)
+        camera_pos = quat_apply(base_quat, camera_local_transform) + base_pos
+
+        camera_state = ViewportCameraState(self.camera_path, self.view_port)
+        eye = Gf.Vec3d(camera_pos[0].item(), camera_pos[1].item(), camera_pos[2].item())
+        target = Gf.Vec3d(base_pos[0].item(), base_pos[1].item(), base_pos[2].item()+0.6)
+        camera_state.set_position_world(eye, True)
+        camera_state.set_target_world(target, True)

@@ -86,39 +86,33 @@ sim:
     # per-shape
     contact_offset: 0.005
     rest_offset: 0.0
+  table:
+    fixed_base: True
+  barrier:
+    fixed_base: True
 
 env:
-  controlFrequencyInv: 1 # 2 # 60 hz
+  controlFrequencyInv:  1 # 60 hz
   renderingInterval: 100
   decimation: 1 #2
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 25 # 25
-          # obs_tensors = [self.fingertip_midpoint_pos,     3
-          #               self.fingertip_midpoint_quat,     4
-          #               self.fingertip_midpoint_linvel,   3
-          #               self.fingertip_midpoint_angvel,   3
-          #               self.cube_grasp_pos,              3
-          #               self.cube_grasp_quat,             4
-          #               rem_time,                         1
-          #               d_to_goal,                        3
-          #               ep_length_tensor,]                1
-  numActions: 8         # 12 for position (3), rotation (3), (2) gripper pose
+  numObservations:  28 # 33 # 25
+  numActions: 7         # 6 for position (3), rotation (3),  gripper pose (1)
+  goal_zone_radius: 0.05
+  use_goal_zone: True
 
-# domain_randomization:
-#   randomize: True
-#   rigid_prim_views:
-#     cube_view:
 
 randomize:
   franka_arm_initial_dof_pos: [0.3592, -0.3093,  0.2254, -2.3489,  0.2915,  1.9132,  1.3769]
 
   fingertip_midpoint_pos_initial: [0.0, -0.2, 0.2]  # initial position of hand above table
   fingertip_midpoint_rot_initial: [3.1416, 0, 3.1416]  # initial rotation of fingertips (Euler)
-  fingertip_midpoint_pos_noise: [0.5, 0.5, 0.3]  # noise on hand position
-  fingertip_midpoint_rot_noise: [1.0, 1.0, 1.0]  # noise on rotation (euler, radians)
+  fingertip_midpoint_pos_noise:  [0.1, 0.1, 0.05]  #[0.5, 0.5, 0.3]  # noise on hand position
+  fingertip_midpoint_rot_noise: [0.1, 0.1, 0.1] #[1.0, 1.0, 1.0]  # noise on rotation (euler, radians)
   
   cube_pos_initial_max_r: 0.5  # initial max distance from center
-  cube_pos_min_r: 0.4
+  cube_pos_min_r: 0.35
+  goal_min_r: 0.7
   
   cube_pos_xy_initial_noise: [0.1, 0.05] #[0.1, 0.2]  # noise on nut position
   cube_rot_noise: [0.0, 0.0, 0.0]   # noise on rotation (euler, radians)
@@ -143,7 +137,7 @@ rl:
 
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
-  gripper_action_scale: [1.0, 1.0]
+  gripper_action_scale: 1.0 # [1.0, 1.0]
   deltaq_action_scale: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 
   clamp_rot: True
@@ -156,14 +150,15 @@ rl:
   kickstart_max_level: 100.0 #200
   action_penalty_scale: 0.001  #0.001  # scale on action penalty
   singularity_penalty_scale: 1.0  # scale on singularity penalty
+  force_penalty_scale: 100.0
   ending_length: 20           # number of steps at the end of the episode where the reward is not zero
 
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
   success_bonus: 100.0  # bonus if nut has been lifted
-  max_episode_length: 400 # 400*dt = 2 seconds
+  max_episode_length: 400 # 400 # 400*dt = 2 seconds
 
 ctrl:
-  ctrl_type: joint_space_id #joint_space_id  # {gym_default,
+  ctrl_type: gym_default  #joint_space_id  # {gym_default,
                               #  joint_space_ik, joint_space_id, 
                               #  task_space_impedance, operational_space_motion, 
                               #  open_loop_force, closed_loop_force,
@@ -177,8 +172,8 @@ ctrl:
     gripper_deriv_gains: [2, 2]
   gym_default:
     ik_method: dls
-    joint_prop_gains: [250, 250, 250, 150, 80, 80, 80] 
-    joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
+    joint_prop_gains: [500, 500, 500, 300, 160, 160, 160]
+    joint_deriv_gains: [6, 6, 6, 6, 6, 6, 6]
     gripper_prop_gains: [500, 500]
     gripper_deriv_gains: [20, 20]
     # joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
@@ -189,8 +184,8 @@ ctrl:
     joint_deriv_gains: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   joint_space_id:
     ik_method: dls
-    joint_prop_gains: [250, 250, 250, 150, 80, 80, 80] #[150, 150, 150, 80, 40, 40, 40]
-    joint_deriv_gains: [4, 4, 4, 4, 4, 4, 4]
+    joint_prop_gains: [500, 500, 500, 300, 160, 160, 160] #[250, 250, 250, 150, 80, 80, 80]
+    joint_deriv_gains: [6, 6, 6, 6, 6, 6, 6] #[4, 4, 4, 4, 4, 4, 4]
   task_space_impedance:
     motion_ctrl_axes: [1, 1, 1, 1, 1, 1]
     task_prop_gains: [40, 40, 40, 40, 40, 40]

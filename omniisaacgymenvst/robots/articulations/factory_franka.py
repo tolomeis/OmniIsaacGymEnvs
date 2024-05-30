@@ -31,7 +31,8 @@ class FactoryFranka(Robot):
     ) -> None:
         """[summary]"""
 
-        self._usd_path = "/home/darko/isaac-ws/omniisaacgymenvst/assets/Collected_factory_franka/factory_franka.usd"
+        self._usd_path = "/home/darko/isaac-ws/OmniIsaacGymEnvs/assets/Collected_factory_franka/factory_franka.usd"
+        print(self._usd_path)
         self._name = name
 
         self._position = torch.tensor([1.0, 0.0, 0.0]) if translation is None else translation
@@ -72,8 +73,8 @@ class FactoryFranka(Robot):
         max_force = [87, 87, 87, 87, 12, 12, 12, 200, 200]
         max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.2, 0.2]
         #max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.15, 0.15]
-        # max_force *= 5
-        # max_velocity *= 5
+        # max_force *= 2
+        # max_velocity *= 2
 
         for i, dof in enumerate(dof_paths):
             set_drive(

@@ -52,6 +52,8 @@ from omni.isaac.core.prims import RigidPrim, RigidPrimView, XFormPrim, XFormPrim
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 from omni.isaac.core.objects import DynamicCuboid
 from omni.isaac.core.objects import VisualSphere, VisualCylinder
+from omni.isaac.core.objects import FixedCuboid
+from omni.isaac.core.materials import PhysicsMaterial
 
 # from omni.kit.viewport.utility.camera_state import ViewportCameraState
 # from omni.kit.viewport.utility import get_viewport_from_window_name
@@ -105,7 +107,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
         # self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
         #                            name="box_view", 
         #                            reset_xform_properties=False)
-        
+
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
         scene.add(self.frankas._lfingers)
@@ -117,17 +119,22 @@ class CubeWS(CubeBase, FactoryABCEnv):
         scales = torch.stack([scales, scales, scales], dim=1)
         self._cube.set_local_scales(scales)
         scene.add(self._cube)
-        # scene.add(self._box)
+        # Randomize densities between 6000 and 15000 kg/m^3
+        min_dens = self.cfg_base.env.cube_min_density
+        max_dens = self.cfg_base.env.cube_max_density
+        densities = torch.rand((self._num_envs,), device=self._device, dtype=torch.float32) * (max_dens - min_dens) + min_dens
+        self._cube.set_densities(densities)
+
         
         self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
         scene.add(self._sphere)
 
-        # self.sphere_material = PreviewSurface(
-        #     prim_path = '/World/envs/.*/sphere_material',
-        #     name = 'sphere_material',
-        #     color = torch.tensor([1.0, 0.0, 0.0]),
-        # )
-        # self._sphere.apply_visual_materials(self.sphere_material)
+
+        if self.cfg_base.env.spawn_obstacle:
+            self.get_obstacle()
+            # self._obstacle = RigidPrimView(prim_paths_expr="/World/envs/.*/barrier", name="barrier_view")
+            # scene.add(self._obstacle)
+        
         
         if self._cfg["test"]:
             self.get_gripper_cyl()
@@ -146,18 +153,34 @@ class CubeWS(CubeBase, FactoryABCEnv):
             prim_path=self.default_zero_env_path + "/cube",
             name="cube",
             color=torch.tensor([0.0, 0.5, 1.0]),
-            size=0.02,  # Cube size is 2x2x2cm -> 0.02*0.02*0.02 = 8e-6 m^3
-            density=500.0,  # 1000kg/m^3 -> 8g
+            size= self.cfg_base.env.cube_size, #0.02,  # Cube size is 2x2x2cm -> 0.02*0.02*0.02 = 8e-6 m^3
+            density=12500.0,  # 1000kg/m^3 -> 8g
             position=cube_pos.numpy()
         )
+        material = PhysicsMaterial(
+            prim_path="/World/physics_material/woo",  # path to the material prim to create
+            dynamic_friction=3.0,
+            static_friction=3.0,
+            restitution=0.1
+        )
+
+        #cube.apply_physics_material(material)
         self._sim_config.apply_articulation_settings("cube", get_prim_at_path(cube.prim_path), self._sim_config.parse_actor_config("cube"))
 
     def get_sphere(self):
-        sphere = VisualSphere(
+        # sphere = VisualSphere(
+        #     prim_path=self.default_zero_env_path + "/sphere",
+        #     name="sphere",
+        #     color=torch.tensor([1.0, 0.0, 0.0]),
+        #     radius=0.01
+        # )
+
+        sphere = VisualCylinder(
             prim_path=self.default_zero_env_path + "/sphere",
             name="sphere",
             color=torch.tensor([1.0, 0.0, 0.0]),
-            radius=0.01
+            radius = self._task_cfg["env"]["goal_zone_radius"],
+            height=0.01
         )
         self._sim_config.apply_articulation_settings("sphere", get_prim_at_path(sphere.prim_path), self._sim_config.parse_actor_config("sphere"))
 
@@ -183,6 +206,16 @@ class CubeWS(CubeBase, FactoryABCEnv):
     #     )
     #     self._sim_config.apply_articulation_settings("box", get_prim_at_path(box.prim_path), self._sim_config.parse_actor_config("box"))
 
+    def get_obstacle(self):
+        barrier = FixedCuboid(
+            prim_path=self.default_zero_env_path + "/barrier",
+            name="barrier",
+            translation=(-0.6, 0.0, self.cfg_base.env.table_height + 0.025),
+            scale=torch.tensor([0.02, 1.1, 0.05]),
+            color=torch.tensor([0.0, 0.0, 0.0]),
+        )
+        #self._sim_config.apply_articulation_settings("barrier", get_prim_at_path(barrier.prim_path), self._sim_config.parse_actor_config("barrier"))
+    
     def _import_env_assets(self):
         pass
 

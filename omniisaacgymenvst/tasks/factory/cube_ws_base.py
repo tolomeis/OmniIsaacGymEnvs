@@ -16,6 +16,7 @@ from omni.isaac.core.utils.stage import get_current_stage
 
 from omniisaacgymenvst.tasks.base.rl_task import RLTask
 from omniisaacgymenvst.robots.articulations.factory_franka import FactoryFranka
+from omni.isaac.core.materials import PhysicsMaterial
 
 
 from pxr import PhysxSchema, UsdPhysics
@@ -26,6 +27,12 @@ from omniisaacgymenvst.tasks.factory.factory_schema_config_base import (
     FactorySchemaConfigBase,
 )
 
+# cuRobo
+# from curobo.types.base import TensorDeviceType
+# from curobo.types.math import Pose
+# from curobo.types.robot import RobotConfig
+# from curobo.util_file import get_robot_configs_path, join_path, load_yaml
+# from curobo.wrap.reacher.ik_solver import IKSolver, IKSolverConfig
 
 class CubeBase(RLTask, FactoryABCBase):
     def __init__(self, name, sim_config, env) -> None:
@@ -43,6 +50,40 @@ class CubeBase(RLTask, FactoryABCBase):
         self._num_observations = sim_config.task_config["env"]["numObservations"]
         self._num_actions = sim_config.task_config["env"]["numActions"]
 
+        self.USE_CUROBO = False
+
+        # if self.USE_CUROBO:
+        #     self.device = TensorDeviceType.CUDA
+        #     self.robot_config = RobotConfig(
+        #         join_path(get_robot_configs_path(), "franka_panda.yaml")
+        #     )
+        #     self.ik_solver_config = IKSolverConfig(
+        #         join_path(get_robot_configs_path(), "franka_panda_ik.yaml")
+        #     )
+        #     self.ik_solver = IKSolver(self.robot_config, self.ik_solver_config)
+
+        #     tensor_args = TensorDeviceType()
+
+        #     config_file = load_yaml(join_path(get_robot_configs_path(), "franka.yml"))
+        #     urdf_file = config_file["robot_cfg"]["kinematics"][
+        #         "urdf_path"
+        #     ]  # Send global path starting with "/"
+        #     base_link = config_file["robot_cfg"]["kinematics"]["base_link"]
+        #     ee_link = config_file["robot_cfg"]["kinematics"]["ee_link"]
+        #     robot_cfg = RobotConfig.from_basic(urdf_file, base_link, ee_link, tensor_args)
+
+        #     ik_config = IKSolverConfig.load_from_robot_config(
+        #         robot_cfg,
+        #         None,
+        #         rotation_threshold=0.05,
+        #         position_threshold=0.005,
+        #         num_seeds=20,
+        #         self_collision_check=False,
+        #         self_collision_opt=False,
+        #         tensor_args=tensor_args,
+        #         use_cuda_graph=True,
+        #     )
+        #     ik_solver = IKSolver(ik_config)
         super().__init__(name, env)
 
     def _get_base_yaml_params(self):
@@ -113,7 +154,7 @@ class CubeBase(RLTask, FactoryABCBase):
                         rb.GetMaxAngularVelocityAttr().Set(64 / math.pi * 180)
 
             table_translation = np.array(
-                [-0.2 - 0.65 , 0.0, self.cfg_base.env.table_height * 0.5]
+                [-0.2 - 0.7 , 0.0, self.cfg_base.env.table_height * 0.5]
             )
             table_orientation = np.array([1.0, 0.0, 0.0, 0.0])
 
@@ -134,12 +175,24 @@ class CubeBase(RLTask, FactoryABCBase):
                 orientation=table_orientation,
                 scale=np.array(
                     [
-                        1.3,
-                        1.3,
+                        1.4,
+                        1.4,
                         self.cfg_base.env.table_height
                     ]),
                 color=np.array([0.1, 0.1, 0.1]),
             )
+            material = PhysicsMaterial(
+                prim_path="/World/physics_material/rubber",  # path to the material prim to create
+                dynamic_friction=0.8,# dynamic_friction=3.0,
+                static_friction=1.1, #3.0
+                restitution=0.1
+            )
+            # color_material = VisualMaterial(
+            #     prim_path="/World/visual_material/rubber",  # path to the material prim to create
+            #     color=np.array([0.1, 0.1, 0.1]),
+            # )
+            # table.apply_visual_material(color_material)
+            table.apply_physics_material(material)
             plane = GroundPlane(prim_path="/World/GroundPlane", z_position=0)
 
         self.parse_controller_spec(add_to_stage=add_to_stage)
@@ -150,6 +203,12 @@ class CubeBase(RLTask, FactoryABCBase):
         self.num_dofs = 9
         self.env_pos = self._env_pos
 
+        self.actions = torch.zeros(
+            (self.num_envs, self.num_actions), device=self.device
+        )
+        self.last_actions = torch.zeros(
+            (self.num_envs, self.num_actions), device=self.device
+        )
         self.dof_pos = torch.zeros((self.num_envs, self.num_dofs), device=self.device)
         self.dof_vel = torch.zeros((self.num_envs, self.num_dofs), device=self.device)
         self.dof_torque = torch.zeros(
