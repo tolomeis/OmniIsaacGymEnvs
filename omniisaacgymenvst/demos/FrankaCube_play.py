@@ -42,11 +42,13 @@ class CubePlay(CubeTask):
         self.joint_pos_buffer = []
         self.joint_vel_buffer = []
         self.joint_ref_buffer = []
+    
+        self.gripper_pos_buffer = []
         self.gripper_vel_buffer = []
+
         self.lfinger_force_buffer = []
         self.rfinger_force_buffer = []
         self.joint_torque_buffer = []
-        self.joint_acc_buffer = []
 
         self.cube_pos_buffer = []
         self.cube_quat_buffer = []
@@ -56,12 +58,17 @@ class CubePlay(CubeTask):
         self.saved_obs_vector = []
         self.saved_actions = []
         
+        self.distance_to_goal = []
+        self.saved_collision_count = []
         self.SAVE_DATA = True
         self.save_idx = 0
         self.save_ready = False
 
         return
         # Wrap post_reset function with camera update
+
+
+
     def post_reset(self):
         super().post_reset()
         self._update_camera()
@@ -69,6 +76,7 @@ class CubePlay(CubeTask):
 
     def get_observations(self):
         obs_vector = super().get_observations()
+        obs_buff = obs_vector["frankas_view"]["obs_buf"]
         if self.SAVE_DATA:
             self.joint_pos_buffer.append(self.frankas.get_joint_positions([0]).cpu().numpy())
             self.joint_vel_buffer.append(self.frankas.get_joint_velocities([0]).cpu().numpy())
@@ -76,13 +84,16 @@ class CubePlay(CubeTask):
             self.lfinger_force_buffer.append(self.left_finger_force[0].cpu().numpy())
             self.rfinger_force_buffer.append(self.right_finger_force[0].cpu().numpy())
             self.gripper_vel_buffer.append(self.fingertip_midpoint_linvel.cpu().numpy())
-            # self.joint_acc_buffer.append(self.frankas.get_joint_accelerations([0]).cpu().numpy())
+            self.joint_torque_buffer.append(self.frankas.get_measured_joint_efforts([0]).cpu().numpy())
             self.cube_pos_buffer.append(self.cube_pos.cpu().numpy())
             self.cube_quat_buffer.append(self.cube_quat.cpu().numpy())
             self.cube_linvel_buffer.append(self.cube_linvel.cpu().numpy())
             self.cube_angvel_buffer.append(self.cube_angvel.cpu().numpy())
-            self.saved_obs_vector.append(obs_vector)
+            self.saved_obs_vector.append(obs_buff.cpu().numpy())
             self.saved_actions.append(self.actions.cpu().numpy())
+            self.gripper_pos_buffer.append(self.fingertip_midpoint_pos.cpu().numpy())
+            self.distance_to_goal.append(torch.norm(self.cube_pos - self.goal_cube_pos, dim=1).cpu().numpy())
+            self.saved_collision_count.append(self.collision_count.cpu().numpy() )
             self.save_ready = True
         return obs_vector
     
@@ -97,10 +108,11 @@ class CubePlay(CubeTask):
             save_buffer = {
                 "joint_pos": np.array(self.joint_pos_buffer),
                 "joint_vel": np.array(self.joint_vel_buffer),
-                "joint_acc": np.array(self.joint_acc_buffer),
+                "joint_torque": np.array(self.joint_torque_buffer),
                 "joint_ref": np.array(self.joint_ref_buffer),
                 "lfinger_force": np.array(self.lfinger_force_buffer),
                 "rfinger_force": np.array(self.rfinger_force_buffer),
+                "gripper_pos": np.array(self.gripper_pos_buffer), 
                 "gripper_vel": np.array(self.gripper_vel_buffer),
                 # Cube data
                 "cube_pos": np.array(self.cube_pos_buffer),
@@ -109,7 +121,8 @@ class CubePlay(CubeTask):
                 "cube_angvel": np.array(self.cube_angvel_buffer),
                 "obs_vector": np.array(self.saved_obs_vector),
                 "actions": np.array(self.saved_actions),
-
+                "distance_to_goal": np.array(self.distance_to_goal),
+                "collision_count": np.array(self.saved_collision_count),
             }
             exp_name = self._cfg["experiment"]
             np.savez('exp_{0}_data_{1}'.format(exp_name, self.save_idx), **save_buffer)
@@ -119,16 +132,18 @@ class CubePlay(CubeTask):
             self.joint_vel_buffer = []
             self.joint_ref_buffer = []
             self.joint_torque_buffer = []
+            self.gripper_pos_buffer = []
             self.gripper_vel_buffer = []
             self.lfinger_force_buffer = []
             self.rfinger_force_buffer = []
-            self.joint_acc_buffer = []
             self.cube_pos_buffer = []
             self.cube_quat_buffer = []
             self.cube_linvel_buffer = []
             self.cube_angvel_buffer = []
             self.saved_obs_vector = []
             self.saved_actions = []
+            self.distance_to_goal = []
+            self.collision_count = []
             print("Saving to exp_{0}_data_{1}".format(exp_name, self.save_idx))
         super().reset_idx(env_ids)
 
