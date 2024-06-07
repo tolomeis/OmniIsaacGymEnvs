@@ -152,7 +152,7 @@ def main():
     if args.checkpoint == 'best':
         pth_file = f"runs/{args.experiment_name}/nn/{args.experiment_name}.pth"
     else:
-        pth_files = glob.glob(f"runs/{args.experiment_name}/nn/last_ep_{args.checkpoint}_*.pth")
+        pth_files = glob.glob(f"runs/{args.experiment_name}/nn/last_{args.experiment_name}_ep_{args.checkpoint}_*.pth")
         print(pth_files)
         if not pth_files:
             print(f"No .pth file found for checkpoint {args.checkpoint}")
@@ -173,7 +173,7 @@ def main():
     nact = config['task']['env']['numActions']
 
     # Export the model
-    name = f"runs/{args.experiment_name}/nn/{args.experiment_name}export"
+    name = f"runs/{args.experiment_name}/nn/{args.experiment_name}_{args.checkpoint}_export"
     export(model, nobs, nact, name)
 
     # Check the model
