@@ -113,7 +113,7 @@ class CubeBase(RLTask, FactoryABCBase):
 
         if add_to_stage:
             franka_translation = np.array([self.cfg_base.env.franka_depth, 0.0, 0.0])
-            franka_orientation = np.array([0.0, 0.0, 0.0, 1.0])
+            franka_orientation = np.array([1.0, 0.0, 0.0, 0.0])
 
             franka = FactoryFranka(
                 prim_path=self.default_zero_env_path + "/franka",
@@ -153,48 +153,8 @@ class CubeBase(RLTask, FactoryABCBase):
                         rb.GetAngularDampingAttr().Set(0.5)
                         rb.GetMaxAngularVelocityAttr().Set(64 / math.pi * 180)
 
-            table_translation = np.array(
-                [-0.2 - 0.7 , 0.0, self.cfg_base.env.table_height * 0.5]
-            )
-            table_orientation = np.array([1.0, 0.0, 0.0, 0.0])
 
-            # table = FixedCylinder(
-            #     prim_path=self.default_zero_env_path + "/table",
-            #     name="table",
-            #     translation=table_translation,
-            #     orientation=table_orientation,
-            #     radius=self.asset_info_franka_table.table_radius,
-            #     height=self.cfg_base.env.table_height,
-            #     color=np.array([0.3, 0.3, 0.3]),
-            # )
-
-            table = FixedCuboid(
-                prim_path=self.default_zero_env_path + "/table",
-                name="table",
-                translation=table_translation,
-                orientation=table_orientation,
-                scale=np.array(
-                    [
-                        1.4,
-                        1.4,
-                        self.cfg_base.env.table_height
-                    ]),
-                color=np.array([0.1, 0.1, 0.1]),
-            )
-            material = PhysicsMaterial(
-                prim_path="/World/physics_material/rubber",  # path to the material prim to create
-                dynamic_friction=0.8,# dynamic_friction=3.0,
-                static_friction=1.1, #3.0
-                restitution=0.1
-            )
-            # color_material = VisualMaterial(
-            #     prim_path="/World/visual_material/rubber",  # path to the material prim to create
-            #     color=np.array([0.1, 0.1, 0.1]),
-            # )
-            # table.apply_visual_material(color_material)
-            table.apply_physics_material(material)
             plane = GroundPlane(prim_path="/World/GroundPlane", z_position=0)
-
         self.parse_controller_spec(add_to_stage=add_to_stage)
 
     def acquire_base_tensors(self):
@@ -237,6 +197,11 @@ class CubeBase(RLTask, FactoryABCBase):
         self.prev_actions = torch.zeros(
             (self.num_envs, self.num_actions), device=self.device
         )
+
+        self.collision_count = torch.zeros(
+            (self.num_envs, 1), device=self.device
+        )
+
 
     def refresh_base_tensors(self):
         """Refresh tensors."""
@@ -331,6 +296,14 @@ class CubeBase(RLTask, FactoryABCBase):
         self.fingertip_midpoint_jacobian = (
             self.left_finger_jacobian + self.right_finger_jacobian
         ) * 0.5
+
+        collisions_data =  self.tables.get_contact_force_data()
+        self.collision_count = torch.sum(collisions_data[4][:], dim=1)
+
+        if self.cfg_base.env.spawn_obstacle:
+            obstacle_collisions = self._obstacles.get_contact_force_data()
+            self.collision_count += torch.sum(obstacle_collisions[4][:], dim=1)
+
 
     def parse_controller_spec(self, add_to_stage):
         """Parse controller specification into lower-level controller configuration."""

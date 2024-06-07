@@ -60,6 +60,7 @@ from omni.isaac.core.materials import PhysicsMaterial
 
 # import omni
 
+from omni.physx.scripts import utils
 
 from omniisaacgymenvst.tasks.base.rl_task import RLTask
 from omniisaacgymenvst.robots.articulations.views.factory_franka_view import FactoryFrankaView
@@ -96,6 +97,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
         self.import_franka_assets()
         self.get_cube()
         self.get_sphere()
+        self.get_table()
         # self.get_box()
 
         RLTask.set_up_scene(self, scene, replicate_physics=False)
@@ -113,6 +115,19 @@ class CubeWS(CubeBase, FactoryABCEnv):
         scene.add(self.frankas._lfingers)
         scene.add(self.frankas._rfingers)
         scene.add(self.frankas._fingertip_centered)
+        
+        self.tables = RigidPrimView(prim_paths_expr="/World/envs/.*/table", 
+                                    name="table_view",
+                                    reset_xform_properties=False,
+                                    # track_contact_forces=True,
+                                    # prepare_contact_sensors=True,
+                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
+                                                                    ["/World/envs/.*/franka/panda_leftfinger"] +
+                                                                    ["/World/envs/.*/franka/panda_rightfinger"],
+                                                                    max_contact_count=10000)
+        scene.add(self.tables)
+        
+        
         # Scale every cube of a factor from 1 to 4
         scales = torch.arange(1.0, self.cfg_base.env.cube_max_scale, (self.cfg_base.env.cube_max_scale - 1.0 )/ self._num_envs).to(self._device)
         # has to be (num_envs, 3)
@@ -124,7 +139,36 @@ class CubeWS(CubeBase, FactoryABCEnv):
         max_dens = self.cfg_base.env.cube_max_density
         densities = torch.rand((self._num_envs,), device=self._device, dtype=torch.float32) * (max_dens - min_dens) + min_dens
         self._cube.set_densities(densities)
+        
+        from omni.isaac.sensor import ContactSensor
 
+        # Initialize a contact sensor for each table in envs
+        # self.table_sensors = []
+        # for i in range(self._num_envs):
+        #     table_sensor = ContactSensor(
+        #         prim_path="/World/envs/{0}/table/contact_sensor".format(i), 
+        #         name="table_sensor",
+        #         frequency=200,
+        #         translation=torch.tensor([0.0, 0.0, 0.0], device=self.device), #self.cfg_base.env.table_height/2.0
+        #         min_threshold=0,
+        #         max_threshold=10000000,
+        #         radius=-1,
+        #     )
+        #     table_sensor.add_raw_contact_data_to_frame()
+        #     self.table_sensors.append(table_sensor)
+        #     scene.add(table_sensor)
+
+        # self.cube_sensor = ContactSensor(
+        #     prim_path=self.default_zero_env_path + "/cube/contact_sensor", 
+        #     name="cube_sensor",
+        #     frequency=200,
+        #     translation=torch.tensor([0.0, 0.0, 0.0], device=self.device),
+        #     min_threshold=0,
+        #     max_threshold=10000000,
+        #     radius=-1,
+        # )
+        # scene.add(self.cube_sensor)
+        
         
         self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
         scene.add(self._sphere)
@@ -132,8 +176,17 @@ class CubeWS(CubeBase, FactoryABCEnv):
 
         if self.cfg_base.env.spawn_obstacle:
             self.get_obstacle()
-            # self._obstacle = RigidPrimView(prim_paths_expr="/World/envs/.*/barrier", name="barrier_view")
-            # scene.add(self._obstacle)
+            self._obstacles = RigidPrimView(prim_paths_expr="/World/envs/.*/table", 
+                                    name="table_view",
+                                    reset_xform_properties=False,
+                                    # track_contact_forces=True,
+                                    # prepare_contact_sensors=True,
+                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
+                                                                    ["/World/envs/.*/franka/panda_leftfinger"] +
+                                                                    ["/World/envs/.*/franka/panda_rightfinger"],
+                                                                    max_contact_count=10000)
+            scene.add(self._obstacles)
+        
         
         
         if self._cfg["test"]:
@@ -146,6 +199,46 @@ class CubeWS(CubeBase, FactoryABCEnv):
 
         return
     
+    def get_table(self):
+        table_translation = np.array(
+                [0.2 + 0.7 , 0.0, self.cfg_base.env.table_height * 0.5]
+        )
+        table_orientation = np.array([1.0, 0.0, 0.0, 0.0])
+
+        table = DynamicCuboid(
+            prim_path=self.default_zero_env_path + "/table",
+            name="table",
+            translation=table_translation,
+            orientation=table_orientation,
+            scale=np.array(
+                [
+                    1.4,
+                    1.4,
+                    self.cfg_base.env.table_height
+                ]),
+            color=np.array([0.1, 0.1, 0.1]),
+        )
+        material = PhysicsMaterial(
+            prim_path="/World/physics_material/rubber",  # path to the material prim to create
+            dynamic_friction=0.8,# dynamic_friction=3.0,
+            static_friction=1.1, #3.0
+            restitution=0.0
+        )
+
+        table.apply_physics_material(material)
+  
+        self._sim_config.apply_articulation_settings(
+            "table",
+            get_prim_at_path(table.prim_path),
+            self._sim_config.parse_actor_config("table"),
+        )
+        ####**** FIXED JOINT FROM WORLD TO TABLE ****####
+
+        joint_prim = utils.createJoint(stage=get_current_stage(), 
+                                       joint_type="Fixed", 
+                                       from_prim=get_prim_at_path(self.default_zero_env_path), 
+                                       to_prim=get_prim_at_path(table.prim_path))
+
     def get_cube(self):
         cube_pos = torch.tensor([0.5, 0.0, self.cfg_base.env.table_height + 0.03])
 
@@ -161,7 +254,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
             prim_path="/World/physics_material/woo",  # path to the material prim to create
             dynamic_friction=3.0,
             static_friction=3.0,
-            restitution=0.1
+            restitution=0.0
         )
 
         #cube.apply_physics_material(material)
@@ -207,7 +300,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
     #     self._sim_config.apply_articulation_settings("box", get_prim_at_path(box.prim_path), self._sim_config.parse_actor_config("box"))
 
     def get_obstacle(self):
-        barrier = FixedCuboid(
+        barrier = DynamicCuboid(
             prim_path=self.default_zero_env_path + "/barrier",
             name="barrier",
             translation=(-0.6, 0.0, self.cfg_base.env.table_height + 0.025),
@@ -215,7 +308,27 @@ class CubeWS(CubeBase, FactoryABCEnv):
             color=torch.tensor([0.0, 0.0, 0.0]),
         )
         #self._sim_config.apply_articulation_settings("barrier", get_prim_at_path(barrier.prim_path), self._sim_config.parse_actor_config("barrier"))
-    
+        material = PhysicsMaterial(
+            prim_path="/World/physics_material/rubber2",  # path to the material prim to create
+            dynamic_friction=0.8,# dynamic_friction=3.0,
+            static_friction=1.1, #3.0
+            restitution=0.1
+        )
+
+        # barrier.apply_physics_material(material)
+  
+        # self._sim_config.apply_articulation_settings(
+        #     "table",
+        #     get_prim_at_path(table.prim_path),
+        #     self._sim_config.parse_actor_config("table"),
+        # )
+        ####**** FIXED JOINT FROM WORLD TO TABLE ****####
+
+        joint_prim = utils.createJoint(stage=get_current_stage(), 
+                                       joint_type="Fixed", 
+                                       from_prim=get_prim_at_path(self.default_zero_env_path), 
+                                       to_prim=get_prim_at_path(barrier.prim_path))
+
     def _import_env_assets(self):
         pass
 

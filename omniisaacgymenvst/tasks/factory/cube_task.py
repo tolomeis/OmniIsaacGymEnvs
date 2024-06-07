@@ -74,6 +74,7 @@ class CubeTask(CubeWS, FactoryABCTask):
             "action_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "singularity_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "force_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "collision_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
 
@@ -270,7 +271,7 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         cube_init_xy  = cube_init_r * torch.cat((torch.cos(cube_init_theta), torch.sin(cube_init_theta)), dim=1)
 
-        self.cube_pos[env_ids, 0]   = - cube_init_xy[env_ids,0]
+        self.cube_pos[env_ids, 0]   = cube_init_xy[env_ids,0]
         self.cube_pos[env_ids, 1]   = cube_init_xy[env_ids,1]
         self.cube_pos[env_ids, 2]   = self.cfg_base.env.table_height + 0.005 
         self.cube_pos_initial = self.cube_pos.clone().to(device=self.device)
@@ -295,7 +296,7 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         goal_min_r = self.cfg_task.randomize.goal_min_r
 
-        r_w = 0.9 + 0.2# workspace radius
+        #r_w = 0.9 + 0.15# workspace radius
 
         if self.cfg_base.env.spawn_obstacle:
             goal_min_r = 0.9
@@ -305,7 +306,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         # goal_r = self.max_r*torch.ones((self.num_envs, 1), dtype=torch.float32, device=self.device)*1.2
         goal_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) *  1.0 - 0.5
         goal_noise_xy = goal_r * torch.cat((torch.cos(goal_theta), torch.sin(goal_theta)), dim=1)        
-        self.goal_cube_pos[env_ids, 0] = - goal_noise_xy[env_ids, 0]
+        self.goal_cube_pos[env_ids, 0] = goal_noise_xy[env_ids, 0]
         self.goal_cube_pos[env_ids, 1] =  goal_noise_xy[env_ids, 1]
     
         self.initial_dist = torch.norm(self.goal_cube_pos - self.cube_pos_initial, dim=1)
@@ -350,7 +351,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         Returns:
             None
         """
-        #actions *= 0.0
+        # actions *= 0.0
         # Interpret actions as target pos displacements and set pos target
         pos_actions = actions[:, 0:3]
         if do_scale:
@@ -435,6 +436,15 @@ class CubeTask(CubeWS, FactoryABCTask):
 
     def get_observations(self):
         """Compute observations."""
+
+        # print(self.frankas._hands.num_filters)
+
+        # contacts = self.table_sensors[0].get_current_frame()
+        # raw_contacts = contacts['contacts'][0]
+        # if 'franka' in raw_contacts['body0'] or 'franka' in raw_contacts['body1']:
+        #     print(" DETECTED FRANKA CONTACT: ", raw_contacts)
+
+        
         # Shallow copies of tensors
         rem_time = torch.unsqueeze(self.max_episode_length - self.progress_buf,1)
         d_to_goal = (self.goal_cube_pos - self.cube_pos)
@@ -523,7 +533,10 @@ class CubeTask(CubeWS, FactoryABCTask):
         #     dist_penalty = torch.where(dist_penalty < 0.0, torch.zeros_like(dist_penalty), dist_penalty)
 
         dist_reward = (1.0 / (1.0 + self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
-
+        
+        if (self.level >= 4*self.cfg_task.rl.kickstart_max_level): # a bit hardcoded, to narrow the shape of the reward
+            dist_reward = (1.0 / (1.0 + 4*self.cfg_task.rl.dist_reward_width_scale * dist_penalty**2))**2
+            
         # Update maximum lin velocity of gripper and cube
         self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
         self.cube_max_linvel = torch.max(torch.norm(self.cube_linvel, dim=1), self.cube_max_linvel)
@@ -535,6 +548,12 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.rew_buf[:] += force_penalty / self.max_episode_length
         self.episode_sums['force_penalty'] += force_penalty / self.max_episode_length
 
+        ## COllision penalty      
+        collision_penalty = - self.collision_count * self.cfg_task.rl.collision_penalty_scale
+        self.rew_buf[:] += collision_penalty / self.max_episode_length
+        self.episode_sums['collision_penalty'] += collision_penalty / self.max_episode_length
+
+    
         # max_torque = torch.max(self.dof_torque, dim=1).values
         # max_torque = max_torque[:,0:7]
         torque_limits = torch.tensor([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0], device=self.device) 
@@ -567,20 +586,20 @@ class CubeTask(CubeWS, FactoryABCTask):
         is_last_step = (self.progress_buf[0] == self.max_episode_length - 1)
         if is_last_step:
             # Check if cube is picked up and above table
-            if self._task_cfg["env"]["use_goal_zone"]:
-                self.rew_buf[:] = torch.where(dist_penalty <= self._task_cfg["env"]["goal_zone_radius"], self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
-            else:
-                self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            # if self._task_cfg["env"]["use_goal_zone"]:
+            #     self.rew_buf[:] = torch.where(dist_penalty <= self._task_cfg["env"]["goal_zone_radius"], self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
+            # else:
+            self.rew_buf[:] = torch.where(dist_penalty < 0.08, self.rew_buf[:] + 2000 * torch.ones_like(self.rew_buf), self.rew_buf)
             # lift_success = self._check_lift_success(height_multiple=1.0)
             #self.level += torch.mean(lift_success.float())
             self.level += 1
             self.extras['final_mean_dists'] = torch.mean(dist_penalty.float())
             # log non-normalized dist penalty
             self.extras['abs_dist'] = torch.mean(torch.norm(self.goal_cube_pos - self.cube_pos, dim=1).float())
-            if self._task_cfg["env"]["use_goal_zone"]:
-                self.extras['abs_dist'] -= self._task_cfg["env"]["goal_zone_radius"]
-                if self.extras['abs_dist'] < 0.0:
-                    self.extras['abs_dist'] = torch.tensor([0.0], device=self.device)
+            # if self._task_cfg["env"]["use_goal_zone"]:
+            #     self.extras['abs_dist'] -= self._task_cfg["env"]["goal_zone_radius"]
+            #     if self.extras['abs_dist'] < 0.0:
+            #         self.extras['abs_dist'] = torch.tensor([0.0], device=self.device)
 
             self.extras['max_linvel'] = torch.mean(self.max_linvel.float())
             self.extras['cube_max_linvel'] = torch.mean(self.cube_max_linvel.float())
@@ -633,8 +652,10 @@ class CubeTask(CubeWS, FactoryABCTask):
         
         fingertip_midpoint_rot_noise = \
             2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
+        
         fingertip_midpoint_rot_noise = fingertip_midpoint_rot_noise @ torch.diag(
             torch.tensor(self.cfg_task.randomize.fingertip_midpoint_rot_noise, device=self.device))
+        
         ctrl_target_fingertip_midpoint_euler += fingertip_midpoint_rot_noise
 
         self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_from_euler_xyz(
