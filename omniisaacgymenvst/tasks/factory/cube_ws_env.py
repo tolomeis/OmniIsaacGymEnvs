@@ -98,17 +98,24 @@ class CubeWS(CubeBase, FactoryABCEnv):
         self.get_cube()
         self.get_sphere()
         self.get_table()
-        # self.get_box()
 
         RLTask.set_up_scene(self, scene, replicate_physics=False)
+
+        if self._task_cfg["env"]["use_box"]:
+            self.get_box()
+            self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
+                            name="box_view", 
+                            reset_xform_properties=False,
+                            contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
+                                                            ["/World/envs/.*/franka/panda_leftfinger"] +
+                                                            ["/World/envs/.*/franka/panda_rightfinger"],
+                                                            max_contact_count=10000)
+            scene.add(self._box)
 
         self.frankas = FactoryFrankaView(prim_paths_expr="/World/envs/.*/franka", name="frankas_view")
         self._cube = RigidPrimView(prim_paths_expr="/World/envs/.*/cube", 
                                    name="cube_view", 
                                    reset_xform_properties=False)
-        # self._box = RigidPrimView(prim_paths_expr="/World/envs/.*/box", 
-        #                            name="box_view", 
-        #                            reset_xform_properties=False)
 
         scene.add(self.frankas)
         scene.add(self.frankas._hands)
@@ -119,8 +126,6 @@ class CubeWS(CubeBase, FactoryABCEnv):
         self.tables = RigidPrimView(prim_paths_expr="/World/envs/.*/table", 
                                     name="table_view",
                                     reset_xform_properties=False,
-                                    # track_contact_forces=True,
-                                    # prepare_contact_sensors=True,
                                     contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
                                                                     ["/World/envs/.*/franka/panda_leftfinger"] +
                                                                     ["/World/envs/.*/franka/panda_rightfinger"],
@@ -139,37 +144,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
         max_dens = self.cfg_base.env.cube_max_density
         densities = torch.rand((self._num_envs,), device=self._device, dtype=torch.float32) * (max_dens - min_dens) + min_dens
         self._cube.set_densities(densities)
-        
-        from omni.isaac.sensor import ContactSensor
-
-        # Initialize a contact sensor for each table in envs
-        # self.table_sensors = []
-        # for i in range(self._num_envs):
-        #     table_sensor = ContactSensor(
-        #         prim_path="/World/envs/{0}/table/contact_sensor".format(i), 
-        #         name="table_sensor",
-        #         frequency=200,
-        #         translation=torch.tensor([0.0, 0.0, 0.0], device=self.device), #self.cfg_base.env.table_height/2.0
-        #         min_threshold=0,
-        #         max_threshold=10000000,
-        #         radius=-1,
-        #     )
-        #     table_sensor.add_raw_contact_data_to_frame()
-        #     self.table_sensors.append(table_sensor)
-        #     scene.add(table_sensor)
-
-        # self.cube_sensor = ContactSensor(
-        #     prim_path=self.default_zero_env_path + "/cube/contact_sensor", 
-        #     name="cube_sensor",
-        #     frequency=200,
-        #     translation=torch.tensor([0.0, 0.0, 0.0], device=self.device),
-        #     min_threshold=0,
-        #     max_threshold=10000000,
-        #     radius=-1,
-        # )
-        # scene.add(self.cube_sensor)
-        
-        
+                
         self._sphere = XFormPrimView(prim_paths_expr="/World/envs/.*/sphere", name="sphere_view")
         scene.add(self._sphere)
 
@@ -179,8 +154,6 @@ class CubeWS(CubeBase, FactoryABCEnv):
             self._obstacles = RigidPrimView(prim_paths_expr="/World/envs/.*/table", 
                                     name="table_view",
                                     reset_xform_properties=False,
-                                    # track_contact_forces=True,
-                                    # prepare_contact_sensors=True,
                                     contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
                                                                     ["/World/envs/.*/franka/panda_leftfinger"] +
                                                                     ["/World/envs/.*/franka/panda_rightfinger"],
@@ -239,6 +212,7 @@ class CubeWS(CubeBase, FactoryABCEnv):
                                        from_prim=get_prim_at_path(self.default_zero_env_path), 
                                        to_prim=get_prim_at_path(table.prim_path))
 
+
     def get_cube(self):
         cube_pos = torch.tensor([0.5, 0.0, self.cfg_base.env.table_height + 0.03])
 
@@ -287,17 +261,17 @@ class CubeWS(CubeBase, FactoryABCEnv):
         )
         self._sim_config.apply_articulation_settings("gripper_cyl", get_prim_at_path(gripper_cyl.prim_path), self._sim_config.parse_actor_config("gripper_cyl"))
     
-    # def get_box(self):
-    #     usd_path = '/workspace/omniisaacgymenvst/omniisaacgymenvst/tasks/factory/assets/small_KLT.usd'
-    #     add_reference_to_stage(usd_path, self.default_zero_env_path + "/box")
-    #     box_pos = torch.tensor([0.0, 0.5, self.cfg_base.env.table_height + 0.2])
-    #     box = RigidPrim(
-    #         prim_path=self.default_zero_env_path + "/box",
-    #         name="box",
-    #         position=box_pos.numpy(),
-    #         scale=(0.5, 0.5, 0.3)
-    #     )
-    #     self._sim_config.apply_articulation_settings("box", get_prim_at_path(box.prim_path), self._sim_config.parse_actor_config("box"))
+    def get_box(self):
+        usd_path = '/workspace/omniisaacgymenvst/omniisaacgymenvst/tasks/factory/assets/small_KLT.usd'
+        add_reference_to_stage(usd_path, self.default_zero_env_path + "/box")
+        box_pos = torch.tensor([0.0, 0.5, self.cfg_base.env.table_height + 0.2])
+        box = RigidPrim(
+            prim_path=self.default_zero_env_path + "/box",
+            name="box",
+            position=box_pos.numpy(),
+            scale=(0.5, 0.5, 0.3)
+        )
+        self._sim_config.apply_articulation_settings("box", get_prim_at_path(box.prim_path), self._sim_config.parse_actor_config("box"))
 
     def get_obstacle(self):
         barrier = DynamicCuboid(

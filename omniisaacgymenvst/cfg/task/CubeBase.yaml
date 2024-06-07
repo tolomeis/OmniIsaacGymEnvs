@@ -17,5 +17,5 @@ env:
   cube_max_scale: 1.5
   cube_min_density: 500 # 1000 # 1800.0
   cube_max_density: 600 # 1500 # 2300.0 
-  cube_size: 0.035
+  cube_size: 0.025
   spawn_obstacle: False
