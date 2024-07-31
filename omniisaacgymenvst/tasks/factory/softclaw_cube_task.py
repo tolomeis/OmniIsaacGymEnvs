@@ -20,8 +20,7 @@ import os
 import torch
 import numpy as np
 
-from omniisaacgymenvst.tasks.factory.factory_cube_env import FactoryCube
-from omniisaacgymenvst.tasks.factory.cube_ws_env import CubeWS
+from omniisaacgymenvst.tasks.factory.softclaw_cube_ws_env import SoftclawCubeWS
 from omniisaacgymenvst.tasks.factory.factory_schema_class_task import FactoryABCTask
 from omniisaacgymenvst.tasks.factory.factory_schema_config_task import FactorySchemaConfigTask
 import omniisaacgymenvst.tasks.factory.factory_control as fc
@@ -35,7 +34,7 @@ import omni.isaac.core.utils.torch as torch_utils
 #from omni.kit.viewport.utility import get_viewport_from_window_name
 #from pxr import Sdf
 
-class CubeTask(CubeWS, FactoryABCTask):
+class SoftclawCubeTask(SoftclawCubeWS, FactoryABCTask):
     def __init__(self, name, sim_config, env, offset=None) -> None:
         super().__init__(name, sim_config, env)
         self._get_task_yaml_params()
@@ -76,6 +75,7 @@ class CubeTask(CubeWS, FactoryABCTask):
             "force_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "collision_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
             "action_rate_penalty": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
+            "acc_saturated": torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False),
         }
         self.decimation = self._task_cfg["env"]["decimation"]
 
@@ -104,6 +104,8 @@ class CubeTask(CubeWS, FactoryABCTask):
         indices = torch.arange(self._num_envs, dtype=torch.int64, device=self._device)
         # step curriculum every 
         self.reset_idx(indices)
+        self.max_episode_length = self.cfg_task.rl.max_episode_length
+
     
     def init_curriculum(self):
         self.goal_noise_curriculum_scale = 1.0
@@ -133,7 +135,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         #     self.initial_dist = torch.where(self.initial_dist < 0.0, torch.zeros_like(self.initial_dist), self.initial_dist)
 
         self.min_r = self.cfg_task.randomize.cube_pos_min_r
-        r_w = 0.9  # + 0.2 # workspace radius
+        r_w = 0.9 + 0.05 # + 0.2 # workspace radius
         #ensure that half of the goals are inside the workspace and half outside
         self.max_r = np.sqrt(2*r_w**2 - self.min_r**2) 
         print("max_r: ", self.max_r)
@@ -149,7 +151,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         if self.progress_buf[0] % 10 == 0:
             is_cube_lifted = torch.where(self.cube_pos[:, 2] > self.cfg_base.env.table_height + 0.02,\
                                       torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
-            is_cube_grasped = torch.where(torch.norm(self.cube_pos - self.fingertip_midpoint_pos, dim=1) < 0.02,\
+            is_cube_grasped = torch.where(torch.norm(self.cube_pos - self.fixed_finger_pos, dim=1) < 0.02,\
                                         torch.ones_like(self.cube_pos[:, 2]), torch.zeros_like(self.cube_pos[:, 2]))
             random_force =  (torch.rand((self.num_envs,3), dtype=torch.float32, device=self.device) * 2.0 - 1.0) @ \
                             torch.diag(torch.tensor(self.cfg_task.randomize.cube_force_max, device=self.device))
@@ -186,7 +188,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         for i in range(5):
             self._apply_actions_as_ctrl_targets(
                     actions=torch.zeros((self.num_envs, self.cfg_task.env.numActions), device=self.device),
-                    ctrl_target_gripper_dof_pos= torch.tensor([0.0, 0.0], device=self.device),
+                    ctrl_target_gripper_dof_pos= torch.tensor([0.0], device=self.device),
                     do_scale=False,
                 )
             SimulationContext.step(self.world, render=False)
@@ -212,12 +214,10 @@ class CubeTask(CubeWS, FactoryABCTask):
         Resets the task by initializing the maximum episode length and randomizing it.
         """
         self.max_episode_length = self.cfg_task.rl.max_episode_length
-        # episode_lenght_noise = torch.randint(
-        #     - self.cfg_task.randomize.ep_lenght_noise,
-        #       self.cfg_task.randomize.ep_lenght_noise,
-        #     size=(1,1),dtype=torch.int32, device=self.device).item()
-        # self.max_episode_length += episode_lenght_noise
-
+        # resolution = 10
+        # self.max_episode_length = resolution * torch.randint(
+        #     int(self.cfg_task.rl.min_episode_length/resolution) , int(self.cfg_task.rl.max_episode_length/resolution + 1), (1,)
+        # ).item()
 
     def _reset_franka(self, env_ids):
         """Reset DOF states and DOF targets of Franka."""
@@ -225,7 +225,6 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         self.dof_pos[env_ids] = torch.cat(
             (torch.tensor(self.cfg_task.randomize.franka_arm_initial_dof_pos, device=self.device),
-             torch.tensor([self.asset_info_franka_table.franka_gripper_width_max], device=self.device),
              torch.tensor([self.asset_info_franka_table.franka_gripper_width_max], device=self.device)),
             dim=-1).unsqueeze(0).repeat((self.num_envs, 1))  # shape = (num_envs, num_dofs)
         
@@ -245,9 +244,11 @@ class CubeTask(CubeWS, FactoryABCTask):
         
         target_p = self.cube_grasp_pos.clone().to(device=self.device)
         #target_p[:,2] += 0.04  #5    # 0.02
-        target_p[:,2] += 0.01  #5    # 0.02
+        # target_p[:,2] += 0.01  #5    # 0.02
         # target_p[:,2] += self.cfg_task.randomize.fingertip_midpoint_pos_noise[2]/2.0 + 0.02
 
+        # move gripper to account for softclaw frames
+        target_p[:,1] -= 0.03 
         # move gripper to grasp pose with CLIK
         self.set_gripper_to(target_p, gripper_initial_grasp_quat, sim_steps=10)
         # self.refresh_base_tensors()
@@ -276,8 +277,9 @@ class CubeTask(CubeWS, FactoryABCTask):
         init_mx_r = self.cfg_task.randomize.cube_pos_initial_max_r
         #randomize reeeeeeaaally close to the center. We want only to make the policy robust
         cube_init_r = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * \
-            (init_mx_r - 0.98*init_mx_r) + init_mx_r*0.98
-        cube_init_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 0.1 - 0.05
+            (init_mx_r - 0.95*init_mx_r) + init_mx_r*0.95
+        
+        cube_init_theta = torch.rand((self.num_envs, 1), dtype=torch.float32, device=self.device) * 0.2 - 0.01
 
         cube_init_xy  = cube_init_r * torch.cat((torch.cos(cube_init_theta), torch.sin(cube_init_theta)), dim=1)
 
@@ -366,7 +368,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         pos_actions = actions[:, 0:3]
         if do_scale:
             pos_actions = pos_actions @ torch.diag(torch.tensor(self.cfg_task.rl.pos_action_scale, device=self.device))
-        self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos + pos_actions
+        self.ctrl_target_fingertip_midpoint_pos = self.fixed_finger_pos + pos_actions
 
 
         # Interpret actions as target rot (axis-angle) displacements
@@ -384,7 +386,7 @@ class CubeTask(CubeWS, FactoryABCTask):
                 rot_actions_quat,
                 torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device).repeat(self.num_envs,1)
             )
-        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fingertip_midpoint_quat)
+        self.ctrl_target_fingertip_midpoint_quat = torch_utils.quat_mul(rot_actions_quat, self.fixed_finger_quat)
 
 
         if self.cfg_task.ctrl.control_gripper:
@@ -393,7 +395,7 @@ class CubeTask(CubeWS, FactoryABCTask):
             gripper_closure = actions[:,6]
             if do_scale:
                 gripper_closure = gripper_closure * self.cfg_task.rl.gripper_action_scale
-            self.ctrl_target_gripper_dof_pos = torch.cat((gripper_closure.unsqueeze(1), gripper_closure.unsqueeze(1)), dim=1)
+            self.ctrl_target_gripper_dof_pos = gripper_closure.unsqueeze(1)
         
         # if self.test:
         #     self._gripper_cyl.set_world_poses(self.ctrl_target_fingertip_midpoint_pos + self.env_pos,
@@ -460,7 +462,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         #     d_to_goal = torch.where(torch.norm(d_to_goal, dim=1).unsqueeze(1) < self._task_cfg["env"]["goal_zone_radius"],
         #                             torch.zeros_like(d_to_goal), reduced_d_to_goal)
 
-        # d_to_cube = (self.fingertip_midpoint_pos - self.cube_grasp_pos)
+        # d_to_cube = (self.fixed_finger_pos - self.cube_grasp_pos)
         ep_length_tensor = torch.tensor(self.max_episode_length, device=self.device).repeat(self.num_envs,1)
         
         # franka_dof_pos = self.dof_pos[:, 0:7]
@@ -471,16 +473,26 @@ class CubeTask(CubeWS, FactoryABCTask):
         # normalized_cube_grasp_pos =
         # normalized_cube_grasp_quat 
         
+        claw_effort = self.frankas.get_measured_joint_efforts(indices=torch.arange(self._num_envs, dtype=torch.int64, device=self._device),
+                                                            joint_indices=[7])
+        
+        # get difference between claw reference and claw actual value
+        claw_joint_val = self.frankas.get_joint_positions(indices=torch.arange(self._num_envs, dtype=torch.int64, device=self._device),
+                                                            joint_indices=[7])
+        claw_diff = torch.abs(claw_joint_val - self.ctrl_target_gripper_dof_pos)
+        # print(claw_effort)
         obs_tensors = [ #franka_dof_pos,
                         # franka_dof_vel,
-                        self.fingertip_midpoint_pos,
-                        self.fingertip_midpoint_quat,
-                        self.fingertip_midpoint_linvel,
-                        self.fingertip_midpoint_angvel,
-                        self.cube_pos, # self.cube_grasp_pos,
-                        # self.cube_grasp_quat,
-                        rem_time,
-                        d_to_goal,
+                        self.fixed_finger_pos,
+                        self.fixed_finger_quat,
+                        self.fixed_finger_linvel,
+                        self.fixed_finger_angvel,
+                        # self.cube_pos, 
+                        self.cube_pos_initial,
+                        # claw_effort,
+                        claw_joint_val,  #claw_diff,
+                        rem_time, #17
+                        self.goal_cube_pos, # d_to_goal,
                         ep_length_tensor, 
                         self.previous_actions]
                         #self.last_actions]
@@ -525,7 +537,7 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         # *** SINGULARITY PENALTY ***
         # penalty as i get close to singularities
-        singularity_proximity = torch.linalg.cond(self.fingertip_midpoint_jacobian, 2)
+        singularity_proximity = torch.linalg.cond(self.fixed_finger_jacobian, 2)
         sing_penalty = -singularity_proximity * self.cfg_task.rl.singularity_penalty_scale
         self.rew_buf[:] += sing_penalty / self.max_episode_length
         self.episode_sums['singularity_penalty'] += sing_penalty / self.max_episode_length
@@ -544,15 +556,15 @@ class CubeTask(CubeWS, FactoryABCTask):
             
 
         # Update maximum lin velocity of gripper and cube
-        self.max_linvel = torch.max(torch.norm(self.fingertip_midpoint_linvel, dim=1), self.max_linvel)
+        self.max_linvel = torch.max(torch.norm(self.fixed_finger_linvel, dim=1), self.max_linvel)
         self.cube_max_linvel = torch.max(torch.norm(self.cube_linvel, dim=1), self.cube_max_linvel)
 
         # Penalty on finger forces
-        forces = self.left_finger_force + self.right_finger_force
-        forces = forces[:,2]
-        force_penalty = - forces * self.cfg_task.rl.force_penalty_scale
-        self.rew_buf[:] += force_penalty / self.max_episode_length
-        self.episode_sums['force_penalty'] += force_penalty / self.max_episode_length
+        # forces = self.left_finger_force + self.right_finger_force
+        # forces = forces[:,2]
+        # force_penalty = - forces * self.cfg_task.rl.force_penalty_scale
+        # self.rew_buf[:] += force_penalty / self.max_episode_length
+        # self.episode_sums['force_penalty'] += force_penalty / self.max_episode_length
 
         ## COllision penalty      
         collision_penalty = - self.collision_count * self.cfg_task.rl.collision_penalty_scale
@@ -573,6 +585,12 @@ class CubeTask(CubeWS, FactoryABCTask):
         torque_saturation = torch.sum(torque_saturation, dim=1)
         self.episode_sums['torque_saturated'] += torque_saturation / self.max_episode_length
 
+        # acceleration limits
+        acc_saturated = torch.where(self.arm_dof_acc >= self.franka_acc_limits, torch.ones_like(self.arm_dof_acc), torch.zeros_like(self.arm_dof_acc))
+        acc_saturated = torch.sum(acc_saturated, dim=1)
+        self.episode_sums['acc_saturated'] += acc_saturated * self.cfg_task.rl.acc_saturated_penalty_scale  / self.max_episode_length
+        self.rew_buf[:] += - acc_saturated * self.cfg_task.rl.acc_saturated_penalty_scale / self.max_episode_length
+
         # Check if episode is ending and apply sparse reward
         is_ending = (self.progress_buf[0] >= self.max_episode_length - self.cfg_task.rl.ending_length)
         if is_ending:
@@ -583,9 +601,10 @@ class CubeTask(CubeWS, FactoryABCTask):
 
         if (self.level <= self.cfg_task.rl.kickstart_max_level):
             self.freezed_reward = torch.norm(self.cube_linvel, dim=1)*200.0*(self.cfg_task.rl.kickstart_max_level-self.level)/self.max_episode_length
-            # cap at a maximum of 200
+            # # cap at a maximum of 200
             self.freezed_reward = torch.where(self.freezed_reward > self.cfg_task.rl.kickstart_reward_max, self.cfg_task.rl.kickstart_reward_max*torch.ones_like(self.freezed_reward), self.freezed_reward)            
             self.freezed_reward *= self.cfg_task.rl.kickstart_reward_scale
+
 
         self.rew_buf[:] += self.freezed_reward
         self.episode_sums['cube_vel_kickstart'] += self.freezed_reward
@@ -646,7 +665,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         """
         # print("randomizing gripper")
         # Set target pos above table
-        self.ctrl_target_fingertip_midpoint_pos = self.fingertip_midpoint_pos.clone().to(device=self.device)
+        self.ctrl_target_fingertip_midpoint_pos = self.fixed_finger_pos.clone().to(device=self.device)
 
         fingertip_midpoint_pos_noise = 2 * (torch.rand((self.num_envs, 3), dtype=torch.float32, device=self.device) - 0.5)  # [-1, 1]
         fingertip_midpoint_pos_noise = fingertip_midpoint_pos_noise @ torch.diag(
@@ -658,7 +677,7 @@ class CubeTask(CubeWS, FactoryABCTask):
         self.ctrl_target_fingertip_midpoint_pos += fingertip_midpoint_pos_noise
 
         # Set target rot
-        ctrl_target_fingertip_midpoint_quat = self.fingertip_midpoint_quat.clone().to(device=self.device)
+        ctrl_target_fingertip_midpoint_quat = self.fixed_finger_quat.clone().to(device=self.device)
 
         ctrl_target_fingertip_midpoint_euler = torch_utils.get_euler_xyz(ctrl_target_fingertip_midpoint_quat)
         # it's a tuple (roll, pitch, yaw) of torch tensor of shapes (n,1). It has to be converted to a single tensor
@@ -684,10 +703,10 @@ class CubeTask(CubeWS, FactoryABCTask):
             self.refresh_env_tensors()
             self._refresh_task_tensors()
             pos_error, axis_angle_error = fc.get_pose_error(
-                fingertip_midpoint_pos=self.fingertip_midpoint_pos,
-                fingertip_midpoint_quat=self.fingertip_midpoint_quat,
+                fingertip_midpoint_pos=self.fixed_finger_pos,
+                fingertip_midpoint_quat=self.fixed_finger_quat,
                 ctrl_target_fingertip_midpoint_pos=self.ctrl_target_fingertip_midpoint_pos,
-                ctrl_target_fingertip_midpoint_quat=self.fingertip_midpoint_quat,
+                ctrl_target_fingertip_midpoint_quat=self.fixed_finger_quat,
                 jacobian_type=self.cfg_ctrl['jacobian_type'],
                 rot_error_type='axis_angle'
             )
@@ -736,8 +755,8 @@ class CubeTask(CubeWS, FactoryABCTask):
 
             # compute pose error
             pos_error, axis_angle_error = fc.get_pose_error(
-                fingertip_midpoint_pos=self.fingertip_midpoint_pos,
-                fingertip_midpoint_quat=self.fingertip_midpoint_quat,
+                fingertip_midpoint_pos=self.fixed_finger_pos,
+                fingertip_midpoint_quat=self.fixed_finger_quat,
                 ctrl_target_fingertip_midpoint_pos = target_gripper_pose,
                 ctrl_target_fingertip_midpoint_quat = target_quat,
                 jacobian_type=self.cfg_ctrl['jacobian_type'],
@@ -749,7 +768,7 @@ class CubeTask(CubeWS, FactoryABCTask):
             delta_arm_dof_pos = fc._get_delta_dof_pos(
                 delta_pose=delta_hand_pose,
                 ik_method='pinv',
-                jacobian=self.fingertip_midpoint_jacobian,
+                jacobian=self.fixed_finger_jacobian,
                 device=self.device,
             )
             # Compute new DOFs
@@ -773,31 +792,3 @@ class CubeTask(CubeWS, FactoryABCTask):
         is_inside = torch.where(dist == 0, torch.ones_like(dist), torch.zeros_like(dist))
         return is_inside
     
-    def create_camera(self):
-        stage = omni.usd.get_context().get_stage()
-        self.view_port = get_viewport_from_window_name("Viewport")
-        # Create camera
-        self.camera_path = "/World/Camera"
-        self.perspective_path = "/OmniverseKit_Persp"
-        camera_prim = stage.DefinePrim(self.camera_path, "Camera")
-        camera_prim.GetAttribute("focalLength").Set(8.5)
-        coi_prop = camera_prim.GetProperty("omni:kit:centerOfInterest")
-        if not coi_prop or not coi_prop.IsValid():
-            camera_prim.CreateAttribute(
-                "omni:kit:centerOfInterest", Sdf.ValueTypeNames.Vector3d, True, Sdf.VariabilityUniform
-            ).Set(Gf.Vec3d(0, 0, -10))
-        self.view_port.set_active_camera(self.perspective_path)
-
-
-    def _update_camera(self):
-        base_pos = self.base_pos[self._selected_id, :].clone()
-        base_quat = self.base_quat[self._selected_id, :].clone()
-
-        camera_local_transform = torch.tensor([-1.8, 0.0, 0.6], device=self.device)
-        camera_pos = quat_apply(base_quat, camera_local_transform) + base_pos
-
-        camera_state = ViewportCameraState(self.camera_path, self.view_port)
-        eye = Gf.Vec3d(camera_pos[0].item(), camera_pos[1].item(), camera_pos[2].item())
-        target = Gf.Vec3d(base_pos[0].item(), base_pos[1].item(), base_pos[2].item()+0.6)
-        camera_state.set_position_world(eye, True)
-        camera_state.set_target_world(target, True)

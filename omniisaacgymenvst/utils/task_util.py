@@ -41,6 +41,8 @@ def import_tasks():
     from omniisaacgymenvst.tasks.factory.factory_task_nut_bolt_screw import FactoryTaskNutBoltScrew
     from omniisaacgymenvst.tasks.factory.factory_task_cube import FactoryCubeTask
     from omniisaacgymenvst.tasks.factory.cube_task import CubeTask
+    from omniisaacgymenvst.tasks.factory.softclaw_cube_task import SoftclawCubeTask
+    from omniisaacgymenvst.tasks.factory.cube_mobile_task import CubeMobileTask
 
     from omniisaacgymenvst.tasks.franka_cabinet import FrankaCabinetTask
     from omniisaacgymenvst.tasks.franka_deformable import FrankaDeformableTask
@@ -67,6 +69,7 @@ def import_tasks():
         "FactoryTaskNutBoltScrew": FactoryTaskNutBoltScrew,
         "FactoryCube": FactoryCubeTask,
         "CubeTask": CubeTask,
+        "SoftclawCubeTask": SoftclawCubeTask,
         "FrankaCabinet": FrankaCabinetTask,
         "FrankaDeformable": FrankaDeformableTask,
         "Humanoid": HumanoidLocomotionTask,
@@ -76,6 +79,7 @@ def import_tasks():
         "ShadowHand": ShadowHandTask,
         "ShadowHandOpenAI_FF": ShadowHandTask,
         "ShadowHandOpenAI_LSTM": ShadowHandTask,
+        "CubeMobileTask": CubeMobileTask,
     }
 
     task_map_warp = {

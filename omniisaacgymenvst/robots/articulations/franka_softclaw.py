@@ -20,7 +20,7 @@ from omniisaacgymenvst.tasks.utils.usd_utils import set_drive
 from pxr import PhysxSchema
 
 
-class FactoryFranka(Robot):
+class FrankaSoftclaw(Robot):
     def __init__(
         self,
         prim_path: str,
@@ -32,18 +32,12 @@ class FactoryFranka(Robot):
         """[summary]"""
 
         # self._usd_path = "/home/darko/isaac-ws/OmniIsaacGymEnvs/assets/Collected_factory_franka/factory_franka.usd"
-        self._usd_path = "/home/darko/isaac-ws/OmniIsaacGymEnvs/assets/Collected_factory_franka_instanceable/franka_inst_inertial.usd"
+        self._usd_path = "/home/darko/isaac-ws/OmniIsaacGymEnvs/assets/Collected_factory_franka_instanceable/franka_softclaw_inrt.usd"
         print(self._usd_path)
         self._name = name
 
         self._position = torch.tensor([1.0, 0.0, 0.0]) if translation is None else translation
         self._orientation = torch.tensor([1.0, 0.0, 0.0, 0.0]) if orientation is None else orientation
-        
-        # if self._usd_path is None:
-        #     assets_root_path = get_assets_root_path()
-        #     if assets_root_path is None:
-        #         carb.log_error("Could not find Isaac Sim assets folder")
-        #     self._usd_path = assets_root_path + "/Isaac/Robots/FactoryFranka/factory_franka.usd"
 
         add_reference_to_stage(self._usd_path, prim_path)
 
@@ -63,22 +57,19 @@ class FactoryFranka(Robot):
             "panda_link4/panda_joint5",
             "panda_link5/panda_joint6",
             "panda_link6/panda_joint7",
-            "panda_hand/panda_finger_joint1",
-            "panda_hand/panda_finger_joint2",
+            "qbsoftclaw_body/qbsoftclaw_shaft_joint",
         ]
 
-        drive_type = ["angular"] * 7 + ["linear"] * 2
-        default_dof_pos = [math.degrees(x) for x in [0.0, -1.0, 0.0, -2.2, 0.0, 2.4, 0.8]] + [0.02, 0.02]
-        stiffness = [40 * np.pi / 180] * 7 + [500] * 2
-        damping = [80 * np.pi / 180] * 7 + [20] * 2
-        max_force = [87, 87, 87, 87, 12, 12, 12, 200, 200]
-        max_force = [82.65, 82.65, 82.65, 82.65, 11.4, 11.4, 11.4, 200, 200]
-        max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.2, 0.2]
-        max_velocity = [math.degrees(x) for x in [2.06, 2.06, 2.06, 2.06, 2.48, 2.48, 2.48]] + [0.2, 0.2]
-        #max_velocity = [math.degrees(x) for x in [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]] + [0.15, 0.15]
-        # max_force *= 2
-        # max_velocity *= 2
+        drive_type = ["angular"] * 8
+        default_dof_pos = [math.degrees(x) for x in [0.0, -1.0, 0.0, -2.2, 0.0, 2.4, 0.8]] + [0.0]
+        stiffness = [40 * np.pi / 180] * 7 + [30 * np.pi / 180]
+        damping = [80 * np.pi / 180] * 7 + [20]
 
+        max_force = [x*0.90 for x in [82.65, 82.65, 82.65, 82.65, 11.4, 11.4, 11.4, 6.5]]
+
+        max_velocity = [math.degrees(x*0.90) for x in [2.06, 2.06, 2.06, 2.06, 2.48, 2.48, 2.48]] + [340]
+        # TODO: check limits in datasheet
+        
         for i, dof in enumerate(dof_paths):
             set_drive(
                 prim_path=f"{self.prim_path}/{dof}",

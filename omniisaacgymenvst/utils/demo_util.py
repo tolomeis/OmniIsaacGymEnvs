@@ -30,11 +30,13 @@
 def initialize_demo(config, env, init_sim=True):
     from omniisaacgymenvst.demos.anymal_terrain import AnymalTerrainDemo
     from omniisaacgymenvst.demos.FrankaCube_play import CubePlay
+    from omniisaacgymenvst.demos.SoftclawPlay import SoftclawPlay
     
     # Mappings from strings to environments
     task_map = {
         "AnymalTerrain": AnymalTerrainDemo,
         "CubeTask":CubePlay,
+        "SoftclawCubeTask":SoftclawPlay
     }
 
     from omniisaacgymenvst.utils.config_utils.sim_config import SimConfig

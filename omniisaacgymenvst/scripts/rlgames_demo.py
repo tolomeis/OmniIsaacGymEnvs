@@ -54,7 +54,8 @@ def parse_hydra_configs(cfg: DictConfig):
     time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     headless = cfg.headless
-    env = VecEnvRLGames(headless=headless, sim_device=cfg.device_id, enable_livestream=cfg.enable_livestream)
+    print("Using app file: ", cfg.kit_app)
+    env = VecEnvRLGames(headless=headless, sim_device=cfg.device_id, enable_livestream=cfg.enable_livestream, experience=cfg.kit_app)
 
     # parse experiment directory
     module_path = os.path.abspath(os.path.join(os.path.dirname(omniisaacgymenvst.__file__)))

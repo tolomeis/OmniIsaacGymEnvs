@@ -3,7 +3,7 @@
 defaults:
     - _self_
 
-name: CubeTask
+name: SoftclawCubeTask
 physics_engine: ${..physics_engine}
 
 sim:
@@ -111,7 +111,7 @@ env:
   renderingInterval: 100
   decimation: 1 #2
   numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations:  28 # 33 # 25
+  numObservations:  29 # 28 # 33 # 25
   numActions: 7         # 6 for position (3), rotation (3),  gripper pose (1)
   goal_zone_radius: 0.06
   use_goal_zone: True
@@ -146,14 +146,14 @@ randomize:
   ep_lenght_noise: 1 # samples, 20*0.08 = 1.6 seconds
 
 rl:
-  pos_action_scale: [0.2, 0.2, 0.2]
-  rot_action_scale: [0.2, 0.2, 0.2]  
+  pos_action_scale: [0.15, 0.15, 0.15] #[0.2, 0.2, 0.2]
+  rot_action_scale: [0.15, 0.15, 0.15] #[0.2, 0.2, 0.2]  
   # pos_action_scale: [0.136, 0.136, 0.136] # 1.7m/s max cartesian speed -> 1.7*0.005 = 0.0085
   # rot_action_scale: [0.2, 0.2, 0.2] # 2.5 rad/s max rot speed -> 2.5*0.005 = 0.0125
 
   force_action_scale: [1.0, 1.0, 1.0]
   torque_action_scale: [1.0, 1.0, 1.0]
-  gripper_action_scale: 1.0 # [1.0, 1.0]
+  gripper_action_scale: 27.0 # [1.0, 1.0]
   deltaq_action_scale: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 
   clamp_rot: True
@@ -166,16 +166,18 @@ rl:
   kickstart_reward_max: 400 # 200.0
   kickstart_max_level: 200 # 100.0 #200
 
-  action_penalty_scale: 0.1  #0.001  # scale on action penalty
+  action_penalty_scale: 0.001  #0.001  # scale on action penalty
   action_rate_penalty_scale: 1.0 # 1.0       # scale on action rate penalty
   singularity_penalty_scale: 1.0      # scale on singularity penalty
   force_penalty_scale: 100.0 # 100.0
   collision_penalty_scale: 4000.0
+  acc_saturated_penalty_scale: 100.0
   ending_length: 20           # number of steps at the end of the episode where the reward is not zero
 
   dist_reward_scale: 100.0    # scale on distance reward (dist_reward = 1 when dist=0)
   success_bonus: 100.0  # bonus if nut has been lifted
-  max_episode_length: 400 # 400 # 400*dt = 2 seconds
+  max_episode_length: 400 # 2 seconds
+  min_episode_length: 200 # 1 seconds
 
 ctrl:
   ctrl_type: gym_default  #joint_space_id  # {gym_default,
@@ -192,14 +194,10 @@ ctrl:
     gripper_deriv_gains: [2, 2]
   gym_default:
     ik_method: dls
-    # joint_prop_gains: [500, 500, 500, 300, 160, 160, 160]
-    # joint_prop_gains: [300, 300, 300, 200, 90, 90, 90]
     joint_prop_gains: [150, 150, 150, 100, 45, 45, 45]
     joint_deriv_gains: [3, 3, 3, 3, 3, 3, 3]
-    gripper_prop_gains: [500, 500]
-    gripper_deriv_gains: [20, 20]
-    # joint_prop_gains: [40, 40, 40, 40, 40, 40, 40]
-    # joint_deriv_gains: [8, 8, 8, 8, 8, 8, 8]
+    gripper_prop_gains: 30
+    gripper_deriv_gains: 1.0
   joint_space_ik:
     ik_method: dls
     joint_prop_gains: [1, 1, 1, 1, 1, 1, 1]

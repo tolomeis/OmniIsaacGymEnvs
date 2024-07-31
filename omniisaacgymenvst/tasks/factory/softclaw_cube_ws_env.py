@@ -40,10 +40,10 @@ import torch
 
 from omniisaacgymenvst.tasks.factory.factory_schema_class_env import FactoryABCEnv
 from omniisaacgymenvst.tasks.factory.factory_schema_config_env import FactorySchemaConfigEnv
-from omniisaacgymenvst.tasks.factory.cube_ws_base import CubeBase
+from omniisaacgymenvst.tasks.factory.softclaw_cube_ws_base import SoftclawCubeBase
 from omni.isaac.core.materials import PreviewSurface
 
-import omniisaacgymenvst.tasks.factory.factory_control as fc
+import omniisaacgymenvst.tasks.factory.softclaw_franka_control as fc
 
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.prims import get_prim_at_path
@@ -63,7 +63,7 @@ from omni.isaac.core.materials import PhysicsMaterial
 from omni.physx.scripts import utils
 
 from omniisaacgymenvst.tasks.base.rl_task import RLTask
-from omniisaacgymenvst.robots.articulations.views.factory_franka_view import FactoryFrankaView
+from omniisaacgymenvst.robots.articulations.views.franka_softclaw_view import FrankaSoftclawView
 
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 from omni.physx.scripts import utils, physicsUtils
@@ -71,7 +71,7 @@ from omni.physx.scripts import utils, physicsUtils
 
 
 
-class CubeWS(CubeBase, FactoryABCEnv):
+class SoftclawCubeWS(SoftclawCubeBase, FactoryABCEnv):
     def __init__(self, name, sim_config, env, offset=None) -> None:
         self._get_env_yaml_params()
 
@@ -112,23 +112,23 @@ class CubeWS(CubeBase, FactoryABCEnv):
                                                             max_contact_count=10000)
             scene.add(self._box)
 
-        self.frankas = FactoryFrankaView(prim_paths_expr="/World/envs/.*/franka", name="frankas_view")
+        self.frankas = FrankaSoftclawView(prim_paths_expr="/World/envs/.*/franka", name="frankas_view")
         self._cube = RigidPrimView(prim_paths_expr="/World/envs/.*/cube", 
                                    name="cube_view", 
                                    reset_xform_properties=False)
 
         scene.add(self.frankas)
-        scene.add(self.frankas._hands)
-        scene.add(self.frankas._lfingers)
-        scene.add(self.frankas._rfingers)
-        scene.add(self.frankas._fingertip_centered)
+        scene.add(self.frankas._claw_fixed_body)
+        scene.add(self.frankas._claw_moving_body)
+        scene.add(self.frankas._caw_fixed_finger)
         
         self.tables = RigidPrimView(prim_paths_expr="/World/envs/.*/table", 
                                     name="table_view",
                                     reset_xform_properties=False,
-                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
-                                                                    ["/World/envs/.*/franka/panda_leftfinger"] +
-                                                                    ["/World/envs/.*/franka/panda_rightfinger"],
+                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 7)] +
+                                                                    ["/World/envs/.*/franka/qbsoftclaw_body"] +
+                                                                    ["/World/envs/.*/franka/qbsoftclaw/qbsoftclaw_shaft_link"] +
+                                                                    ["/World/envs/.*/franka/fixed_finger_pad"],
                                                                     max_contact_count=10000)
         scene.add(self.tables)
         
@@ -154,9 +154,10 @@ class CubeWS(CubeBase, FactoryABCEnv):
             self._obstacles = RigidPrimView(prim_paths_expr="/World/envs/.*/barrier", 
                                     name="barrier_view",
                                     reset_xform_properties=False,
-                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 8)] +
-                                                                    ["/World/envs/.*/franka/panda_leftfinger"] +
-                                                                    ["/World/envs/.*/franka/panda_rightfinger"],
+                                    contact_filter_prim_paths_expr=["/World/envs/.*/franka/panda_link{0}".format(i) for i in range(2, 7)] +
+                                                                    ["/World/envs/.*/franka/qbsoftclaw_body"] +
+                                                                    ["/World/envs/.*/franka/qbsoftclaw_shaft_link"] +
+                                                                    ["/World/envs/.*/franka/fixed_finger_pad"],
                                                                     max_contact_count=10000)
             scene.add(self._obstacles)
         
@@ -191,7 +192,6 @@ class CubeWS(CubeBase, FactoryABCEnv):
                 ]),
             color=np.array([0.1, 0.1, 0.1]),
         )
-        
         material = PhysicsMaterial(
             prim_path="/World/physics_material/rubber",  # path to the material prim to create
             dynamic_friction= 1.5,#0.8 dynamic_friction=3.0,
@@ -316,37 +316,3 @@ class CubeWS(CubeBase, FactoryABCEnv):
         cube_velocities = self._cube.get_velocities(clone=False)
         self.cube_linvel = cube_velocities[:, 0:3]
         self.cube_angvel = cube_velocities[:, 3:6]
-
-        # net contact force is not available yet
-        # self.cube_force = ...
-
-
-        # self.nut_com_pos = fc.translate_along_local_z(
-        #     pos=self.nut_pos,
-        #     quat=self.nut_quat,
-        #     offset=self.bolt_head_heights + self.nut_heights * 0.5,
-        #     device=self.device
-        # )
-
-        # self.nut_com_quat = self.nut_quat  # always equal
-
-        # self.nut_com_linvel = self.nut_linvel + torch.cross(
-        #     self.nut_angvel,
-        #     (self.nut_com_pos - self.nut_pos),
-        #     dim=1
-        # )
-
-    # def create_camera(self):
-    #     stage = omni.usd.get_context().get_stage()
-    #     self.view_port = get_viewport_from_window_name("Viewport")
-    #     # Create camera
-    #     self.camera_path = "/World/Camera"
-    #     self.perspective_path = "/OmniverseKit_Persp"
-    #     camera_prim = stage.DefinePrim(self.camera_path, "Camera")
-    #     camera_prim.GetAttribute("focalLength").Set(8.5)
-    #     coi_prop = camera_prim.GetProperty("omni:kit:centerOfInterest")
-    #     if not coi_prop or not coi_prop.IsValid():
-    #         camera_prim.CreateAttribute(
-    #             "omni:kit:centerOfInterest", Sdf.ValueTypeNames.Vector3d, True, Sdf.VariabilityUniform
-    #         ).Set(Gf.Vec3d(0, 0, -10))
-    #     self.view_port.set_active_camera(self.perspective_path)

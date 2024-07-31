@@ -132,7 +132,7 @@ class CubeBase(RLTask, FactoryABCBase):
                     rb = PhysxSchema.PhysxRigidBodyAPI.Get(
                         self._stage, link_prim.GetPrimPath()
                     )
-                    rb.GetDisableGravityAttr().Set(True)
+                    rb.GetDisableGravityAttr().Set(False)
                     rb.GetRetainAccelerationsAttr().Set(False)
                     if self.cfg_base.sim.add_damping:
                         rb.GetLinearDampingAttr().Set(
@@ -202,6 +202,9 @@ class CubeBase(RLTask, FactoryABCBase):
             (self.num_envs, 1), device=self.device
         )
 
+        self.franka_gravity_torque = torch.zeros(
+            (self.num_envs, 7), device=self.device
+        )
 
     def refresh_base_tensors(self):
         """Refresh tensors."""
@@ -222,7 +225,7 @@ class CubeBase(RLTask, FactoryABCBase):
         ]  # for Franka arm (not gripper)
 
         # self.franka_coriolis_forces = self.frankas.get_coriolis_and_centrifugal_forces(clone=False)
-        # self.franka_gravity_torque = self.frankas.get_generalized_gravity_forces(clone=False)
+        self.franka_gravity_torque = self.frankas.get_generalized_gravity_forces(clone=False)
         
         self.arm_coriolis_forces = torch.zeros((self.num_envs, 7), device=self.device)
 
@@ -550,6 +553,7 @@ class CubeBase(RLTask, FactoryABCBase):
             device=self.device,
         )
 
+        self.frankas.set_joint_efforts(efforts=self.franka_gravity_torque)
         self.frankas.set_joint_position_targets(positions=self.ctrl_target_dof_pos)
 
     def _set_dof_torque(self):

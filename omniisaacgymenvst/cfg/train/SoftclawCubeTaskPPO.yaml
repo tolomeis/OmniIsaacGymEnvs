@@ -34,7 +34,7 @@ params:
   load_path: ${...checkpoint}
 
   config:
-    name: ${resolve_default:CubeTask,${....experiment}}
+    name: ${resolve_default:SoftclawCubeTask,${....experiment}}
     full_experiment_name: ${.name}
     device: ${....rl_device}
     device_name: ${....rl_device}
@@ -49,7 +49,7 @@ params:
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: true
-    gamma: 0.996
+    gamma: 0.999
     tau: 0.95
     learning_rate: 0.0001
     lr_schedule: adaptive
